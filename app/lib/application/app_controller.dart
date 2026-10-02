@@ -5,6 +5,7 @@ import '../domain/models.dart';
 import '../domain/packages.dart';
 import '../domain/reconciliation.dart';
 import '../domain/scoring.dart';
+import '../domain/statistics.dart';
 import 'providers.dart';
 
 class AppController extends Notifier<AppData> {
@@ -38,25 +39,235 @@ class AppController extends Notifier<AppData> {
     return tournament.id;
   }
 
+  Future<void> updateTournamentDetails(
+    String tournamentId, {
+    required String name,
+    required String venue,
+    required DateTime startsOn,
+    required DateTime endsOn,
+    required TournamentStatus status,
+    TournamentFormat? format,
+    int? poolCount,
+    int? qualifiersPerPool,
+    int? knockoutSize,
+    bool? thirdPlaceEnabled,
+    MatchRules? poolRules,
+    MatchRules? semifinalRules,
+    MatchRules? finalRules,
+    MatchRules? thirdPlaceRules,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw StateError('Tournament name is required.');
+    }
+    if (endsOn.isBefore(startsOn)) {
+      throw StateError('The end date cannot be before the start date.');
+    }
+    await _updateTournament(tournamentId, (tournament) {
+      final nextFormat = format ?? tournament.format;
+      final nextPoolCount = poolCount ?? tournament.poolCount;
+      final nextQualifiers = qualifiersPerPool ?? tournament.qualifiersPerPool;
+      final nextKnockoutSize = knockoutSize ?? tournament.knockoutSize;
+      if (![1, 2, 4].contains(nextPoolCount)) {
+        throw StateError('Pool count must be 1, 2, or 4.');
+      }
+      if (nextQualifiers < 1) {
+        throw StateError('At least one team must qualify from each pool.');
+      }
+      final qualifyingTeams = nextPoolCount * nextQualifiers;
+      if (nextFormat == TournamentFormat.poolsThenKnockout &&
+          ![2, 4, 8].contains(qualifyingTeams)) {
+        throw StateError('The total number of qualifiers must be 2, 4, or 8.');
+      }
+      if (![2, 4, 8].contains(nextKnockoutSize)) {
+        throw StateError('Knockout size must be 2, 4, or 8 teams.');
+      }
+      final hasBracketGames = tournament.games.any(
+        (game) => game.stage == GameStage.bracket,
+      );
+      final nextThirdPlaceEnabled =
+          thirdPlaceEnabled ?? tournament.thirdPlaceEnabled;
+      if (hasBracketGames &&
+          (nextFormat != tournament.format ||
+              nextPoolCount != tournament.poolCount ||
+              nextQualifiers != tournament.qualifiersPerPool ||
+              nextKnockoutSize != tournament.knockoutSize)) {
+        throw StateError(
+          'Delete the existing knockout games before changing the tournament format.',
+        );
+      }
+      final finalRoundGenerated = tournament.games.any(
+        (game) =>
+            game.stage == GameStage.bracket &&
+            (game.bracketType == BracketGameType.finalMatch ||
+                game.bracketType == BracketGameType.thirdPlace),
+      );
+      if (finalRoundGenerated &&
+          nextThirdPlaceEnabled != tournament.thirdPlaceEnabled) {
+        throw StateError(
+          'Delete the generated final round before changing the third-place option.',
+        );
+      }
+      final hasPoolGames = tournament.games.any(
+        (game) => game.stage == GameStage.pool,
+      );
+      if (hasPoolGames &&
+          (nextFormat != tournament.format ||
+              nextPoolCount != tournament.poolCount)) {
+        throw StateError(
+          'Delete the existing pool games before changing the format or pool count.',
+        );
+      }
+      var teams = tournament.teams;
+      if (nextPoolCount != tournament.poolCount) {
+        teams = [
+          for (var index = 0; index < teams.length; index++)
+            teams[index].copyWith(poolNumber: index % nextPoolCount + 1),
+        ];
+      }
+      return tournament.copyWith(
+        name: cleanName,
+        venue: venue.trim(),
+        startsOn: startsOn,
+        endsOn: endsOn,
+        status: status,
+        format: nextFormat,
+        poolCount: nextPoolCount,
+        qualifiersPerPool: nextQualifiers,
+        knockoutSize: nextKnockoutSize,
+        thirdPlaceEnabled: nextThirdPlaceEnabled,
+        poolRules: poolRules ?? tournament.poolRules,
+        semifinalRules: semifinalRules ?? tournament.semifinalRules,
+        finalRules: finalRules ?? tournament.finalRules,
+        thirdPlaceRules: thirdPlaceRules ?? tournament.thirdPlaceRules,
+        teams: teams,
+      );
+    });
+  }
+
   Future<void> addTeam(
     String tournamentId,
     String name,
     String shortCode,
     int colorValue,
   ) async {
-    final team = TournamentTeam(
-      id: _uuid.v4(),
-      name: name.trim(),
-      shortCode: shortCode.trim().toUpperCase(),
-      colorValue: colorValue,
-    );
     await _updateTournament(tournamentId, (tournament) {
+      final team = TournamentTeam(
+        id: _uuid.v4(),
+        name: name.trim(),
+        shortCode: shortCode.trim().toUpperCase(),
+        colorValue: colorValue,
+        poolNumber: tournament.format == TournamentFormat.poolsThenKnockout
+            ? tournament.teams.length % tournament.poolCount + 1
+            : 1,
+      );
       if (tournament.teams.any(
         (item) => item.name.toLowerCase() == team.name.toLowerCase(),
       )) {
         throw StateError('A team with that name already exists.');
       }
       return tournament.copyWith(teams: [...tournament.teams, team]);
+    });
+  }
+
+  Future<void> updateTeamDetails(
+    String tournamentId,
+    String teamId, {
+    required String name,
+    required String shortCode,
+    int? poolNumber,
+  }) async {
+    final cleanName = name.trim();
+    final cleanCode = shortCode.trim().toUpperCase();
+    if (cleanName.isEmpty) throw StateError('Team name is required.');
+    if (cleanCode.isEmpty || cleanCode.length > 4) {
+      throw StateError('Short code must contain one to four characters.');
+    }
+    await _updateTournament(tournamentId, (tournament) {
+      final currentTeam = tournament.team(teamId);
+      if (poolNumber != null &&
+          poolNumber != currentTeam.poolNumber &&
+          tournament.games.any((game) => game.stage == GameStage.pool)) {
+        throw StateError(
+          'Delete the existing pool games before moving a team to another pool.',
+        );
+      }
+      if (poolNumber != null &&
+          (poolNumber < 1 || poolNumber > tournament.poolCount)) {
+        throw StateError('Choose a valid tournament pool.');
+      }
+      if (tournament.teams.any(
+        (team) =>
+            team.id != teamId &&
+            team.name.toLowerCase() == cleanName.toLowerCase(),
+      )) {
+        throw StateError('Another team already uses that name.');
+      }
+      if (tournament.teams.any(
+        (team) =>
+            team.id != teamId &&
+            team.shortCode.toLowerCase() == cleanCode.toLowerCase(),
+      )) {
+        throw StateError('Another team already uses that short code.');
+      }
+      final teams = tournament.teams.map((team) {
+        if (team.id != teamId) return team;
+        return TournamentTeam(
+          id: team.id,
+          name: cleanName,
+          shortCode: cleanCode,
+          colorValue: team.colorValue,
+          poolNumber: poolNumber ?? team.poolNumber,
+          players: team.players,
+        );
+      }).toList();
+      return tournament.copyWith(teams: teams);
+    });
+  }
+
+  Future<void> reorderTeams(
+    String tournamentId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    await _updateTournament(tournamentId, (tournament) {
+      if (oldIndex < 0 ||
+          oldIndex >= tournament.teams.length ||
+          newIndex < 0 ||
+          newIndex >= tournament.teams.length) {
+        throw StateError('Invalid team order.');
+      }
+      final teams = [...tournament.teams];
+      teams.insert(newIndex, teams.removeAt(oldIndex));
+      return tournament.copyWith(teams: teams);
+    });
+  }
+
+  Future<void> updateBracketSettings(
+    String tournamentId, {
+    required bool enabled,
+    required int size,
+  }) async {
+    if (![2, 4, 8].contains(size)) {
+      throw StateError('Bracket size must be 2, 4, or 8 teams.');
+    }
+    await _updateTournament(tournamentId, (tournament) {
+      final hasBracketGames = tournament.games.any(
+        (game) => game.stage == GameStage.bracket,
+      );
+      if (hasBracketGames && (!enabled || size != tournament.bracketSize)) {
+        throw StateError(
+          'Delete the existing bracket games before changing bracket settings.',
+        );
+      }
+      return tournament.copyWith(
+        format: enabled
+            ? TournamentFormat.poolsThenKnockout
+            : TournamentFormat.roundRobin,
+        poolCount: 1,
+        qualifiersPerPool: size,
+        knockoutSize: size,
+      );
     });
   }
 
@@ -87,15 +298,94 @@ class AppController extends Notifier<AppData> {
     });
   }
 
+  Future<void> replaceTeamRoster(
+    String tournamentId,
+    String teamId,
+    List<Player> players,
+  ) async {
+    final numbers = <int>{};
+    final ids = <String>{};
+    for (final player in players) {
+      if (player.name.trim().isEmpty) {
+        throw StateError('Every player must have a name.');
+      }
+      if (player.number < 0) {
+        throw StateError('Jersey numbers cannot be negative.');
+      }
+      if (!numbers.add(player.number)) {
+        throw StateError(
+          'Jersey number ${player.number} is assigned more than once.',
+        );
+      }
+      if (!ids.add(player.id)) {
+        throw StateError('The roster contains a duplicate player record.');
+      }
+    }
+    if (players.where((player) => player.isCaptain).length > 1) {
+      throw StateError('Only one captain can be selected.');
+    }
+
+    await _updateTournament(tournamentId, (tournament) {
+      final teamIndex = tournament.teams.indexWhere(
+        (team) => team.id == teamId,
+      );
+      if (teamIndex < 0) throw StateError('Team not found.');
+      final referencedPlayerIds = <String>{};
+      for (final game in tournament.games) {
+        final logs = <ScorerLog>[
+          ...game.logs,
+          if (game.officialLog != null) game.officialLog!,
+        ];
+        for (final log in logs) {
+          for (final lineup in log.lineups.where(
+            (item) => item.teamId == teamId,
+          )) {
+            referencedPlayerIds.addAll(lineup.playerIds);
+          }
+          for (final action in log.rallies.expand((rally) => rally.actions)) {
+            if (action.teamId == teamId && action.playerId != null) {
+              referencedPlayerIds.add(action.playerId!);
+            }
+          }
+        }
+      }
+      final removedReferenced = referencedPlayerIds.difference(ids);
+      if (removedReferenced.isNotEmpty) {
+        throw StateError(
+          'Players already referenced by a scorer log cannot be removed. Edit their details instead.',
+        );
+      }
+      final teams = [...tournament.teams];
+      teams[teamIndex] = teams[teamIndex].copyWith(players: players);
+      return tournament.copyWith(teams: teams);
+    });
+  }
+
   Future<void> generateRoundRobin(
     String tournamentId, {
     DateTime? firstGameAt,
   }) async {
     await _updateTournament(tournamentId, (tournament) {
+      if (tournament.format == TournamentFormat.knockoutOnly) {
+        throw StateError('This tournament is configured as knockout only.');
+      }
       if (tournament.teams.length < 2) {
         throw StateError('Add at least two teams first.');
       }
+      if (tournament.format == TournamentFormat.poolsThenKnockout) {
+        for (var pool = 1; pool <= tournament.poolCount; pool++) {
+          final count = tournament.teams
+              .where((team) => team.poolNumber == pool)
+              .length;
+          if (count < 2 || count < tournament.qualifiersPerPool) {
+            throw StateError(
+              'Pool ${_poolLabel(pool)} needs at least ${tournament.qualifiersPerPool.clamp(2, 99)} teams.',
+            );
+          }
+        }
+      }
       final existingPairs = tournament.games
+          .where((game) => game.stage == GameStage.pool)
           .map((game) => {game.homeTeamId, game.awayTeamId}.toList()..sort())
           .map((pair) => pair.join(':'))
           .toSet();
@@ -104,6 +394,12 @@ class AppController extends Notifier<AppData> {
           firstGameAt ?? tournament.startsOn.add(const Duration(hours: 9));
       for (var home = 0; home < tournament.teams.length; home++) {
         for (var away = home + 1; away < tournament.teams.length; away++) {
+          final homeTeam = tournament.teams[home];
+          final awayTeam = tournament.teams[away];
+          if (tournament.format == TournamentFormat.poolsThenKnockout &&
+              homeTeam.poolNumber != awayTeam.poolNumber) {
+            continue;
+          }
           final pair = [tournament.teams[home].id, tournament.teams[away].id]
             ..sort();
           if (existingPairs.contains(pair.join(':'))) continue;
@@ -115,6 +411,11 @@ class AppController extends Notifier<AppData> {
               awayTeamId: tournament.teams[away].id,
               scheduledAt: slot,
               venue: tournament.venue,
+              poolNumber:
+                  tournament.format == TournamentFormat.poolsThenKnockout
+                  ? homeTeam.poolNumber
+                  : 1,
+              rulesSnapshot: tournament.effectivePoolRules,
             ),
           );
           slot = slot.add(const Duration(hours: 2));
@@ -123,6 +424,207 @@ class AppController extends Notifier<AppData> {
       return tournament.copyWith(status: TournamentStatus.active, games: games);
     });
   }
+
+  Future<void> generateBracket(String tournamentId) async {
+    await _updateTournament(tournamentId, (tournament) {
+      if (tournament.format == TournamentFormat.roundRobin) {
+        throw StateError('Choose a tournament format with a knockout phase.');
+      }
+      if (tournament.teams.length < tournament.bracketSize) {
+        throw StateError(
+          'This tournament does not have enough teams for the selected bracket size.',
+        );
+      }
+      if (tournament.games.any((game) => game.stage == GameStage.bracket)) {
+        throw StateError('A bracket has already been generated.');
+      }
+      final poolGames = tournament.games
+          .where((game) => game.stage == GameStage.pool)
+          .toList();
+      late final List<TournamentTeam> qualifiers;
+      if (tournament.format == TournamentFormat.poolsThenKnockout) {
+        if (poolGames.isEmpty ||
+            poolGames.any((game) => game.status != GameStatus.finalized)) {
+          throw StateError(
+            'Finalize every pool game before generating the knockout phase.',
+          );
+        }
+        qualifiers = [];
+        final poolRows = <int, List<StandingRow>>{};
+        for (var pool = 1; pool <= tournament.poolCount; pool++) {
+          final rows = const StatisticsService().standings(
+            tournament,
+            poolNumber: pool,
+          );
+          if (rows.length < tournament.qualifiersPerPool) {
+            throw StateError(
+              'Pool ${_poolLabel(pool)} does not have enough teams.',
+            );
+          }
+          poolRows[pool] = rows;
+        }
+        for (var rank = 0; rank < tournament.qualifiersPerPool; rank++) {
+          for (var pool = 1; pool <= tournament.poolCount; pool++) {
+            qualifiers.add(poolRows[pool]![rank].team);
+          }
+        }
+      } else {
+        qualifiers = tournament.teams.take(tournament.knockoutSize).toList();
+      }
+      final seedOrder = _bracketSeedOrder(tournament.bracketSize);
+      var scheduledAt = poolGames.isEmpty
+          ? tournament.startsOn.add(const Duration(hours: 9))
+          : poolGames
+                .map((game) => game.scheduledAt)
+                .reduce((a, b) => a.isAfter(b) ? a : b)
+                .add(const Duration(hours: 2));
+      final games = [...tournament.games];
+      final firstRoundType = tournament.bracketSize == 2
+          ? BracketGameType.finalMatch
+          : BracketGameType.standard;
+      final firstRoundRules = tournament.bracketSize == 2
+          ? tournament.effectiveFinalRules
+          : tournament.effectiveSemifinalRules;
+      for (var index = 0; index < seedOrder.length; index += 2) {
+        games.add(
+          Game(
+            id: _uuid.v4(),
+            tournamentId: tournament.id,
+            homeTeamId: qualifiers[seedOrder[index] - 1].id,
+            awayTeamId: qualifiers[seedOrder[index + 1] - 1].id,
+            scheduledAt: scheduledAt,
+            venue: tournament.venue,
+            stage: GameStage.bracket,
+            bracketRound: 1,
+            bracketOrder: index ~/ 2,
+            bracketType: firstRoundType,
+            rulesSnapshot: firstRoundRules,
+          ),
+        );
+        scheduledAt = scheduledAt.add(const Duration(hours: 2));
+      }
+      return tournament.copyWith(games: games);
+    });
+  }
+
+  Future<void> advanceBracket(String tournamentId) async {
+    await _updateTournament(tournamentId, (tournament) {
+      final bracketGames = tournament.games
+          .where(
+            (game) =>
+                game.stage == GameStage.bracket &&
+                game.bracketType != BracketGameType.thirdPlace,
+          )
+          .toList();
+      if (bracketGames.isEmpty) throw StateError('Generate the bracket first.');
+      final currentRound = bracketGames
+          .map((game) => game.bracketRound ?? 1)
+          .reduce((a, b) => a > b ? a : b);
+      final currentGames =
+          bracketGames
+              .where((game) => game.bracketRound == currentRound)
+              .toList()
+            ..sort(
+              (a, b) => (a.bracketOrder ?? 0).compareTo(b.bracketOrder ?? 0),
+            );
+      if (currentGames.length == 1) {
+        throw StateError('The bracket is already complete.');
+      }
+      if (currentGames.any(
+        (game) =>
+            game.status != GameStatus.finalized || game.officialLog == null,
+      )) {
+        throw StateError(
+          'Finalize every game in the current bracket round first.',
+        );
+      }
+      final nextRound = currentRound + 1;
+      if (bracketGames.any((game) => game.bracketRound == nextRound)) {
+        throw StateError('The next bracket round has already been generated.');
+      }
+      final winners = currentGames
+          .map((game) => _gameWinner(game, tournament.rulesFor(game)))
+          .toList();
+      final losers = currentGames
+          .map((game) => _gameLoser(game, tournament.rulesFor(game)))
+          .toList();
+      var scheduledAt = currentGames
+          .map((game) => game.scheduledAt)
+          .reduce((a, b) => a.isAfter(b) ? a : b)
+          .add(const Duration(hours: 2));
+      final games = [...tournament.games];
+      if (winners.length == 2 && tournament.thirdPlaceEnabled) {
+        games.add(
+          Game(
+            id: _uuid.v4(),
+            tournamentId: tournament.id,
+            homeTeamId: losers[0],
+            awayTeamId: losers[1],
+            scheduledAt: scheduledAt,
+            venue: tournament.venue,
+            stage: GameStage.bracket,
+            bracketRound: nextRound,
+            bracketOrder: 1,
+            bracketType: BracketGameType.thirdPlace,
+            rulesSnapshot: tournament.effectiveThirdPlaceRules,
+          ),
+        );
+        scheduledAt = scheduledAt.add(const Duration(hours: 2));
+      }
+      for (var index = 0; index < winners.length; index += 2) {
+        final isFinal = winners.length == 2;
+        games.add(
+          Game(
+            id: _uuid.v4(),
+            tournamentId: tournament.id,
+            homeTeamId: winners[index],
+            awayTeamId: winners[index + 1],
+            scheduledAt: scheduledAt,
+            venue: tournament.venue,
+            stage: GameStage.bracket,
+            bracketRound: nextRound,
+            bracketOrder: index ~/ 2,
+            bracketType: isFinal
+                ? BracketGameType.finalMatch
+                : BracketGameType.standard,
+            rulesSnapshot: isFinal
+                ? tournament.effectiveFinalRules
+                : tournament.effectiveSemifinalRules,
+          ),
+        );
+        scheduledAt = scheduledAt.add(const Duration(hours: 2));
+      }
+      return tournament.copyWith(games: games);
+    });
+  }
+
+  List<int> _bracketSeedOrder(int size) {
+    var seeds = <int>[1, 2];
+    while (seeds.length < size) {
+      final sum = seeds.length * 2 + 1;
+      seeds = [
+        for (final seed in seeds) ...[seed, sum - seed],
+      ];
+    }
+    return seeds;
+  }
+
+  String _gameWinner(Game game, MatchRules rules) {
+    final official = game.officialLog;
+    if (official == null) {
+      throw StateError('A bracket game has no official result.');
+    }
+    final score = const ScoringEngine().score(game, official, rules);
+    return score.homeSets > score.awaySets ? game.homeTeamId : game.awayTeamId;
+  }
+
+  String _gameLoser(Game game, MatchRules rules) {
+    final winner = _gameWinner(game, rules);
+    return winner == game.homeTeamId ? game.awayTeamId : game.homeTeamId;
+  }
+
+  String _poolLabel(int poolNumber) =>
+      String.fromCharCode('A'.codeUnitAt(0) + poolNumber - 1);
 
   Future<void> addGame(
     String tournamentId, {
@@ -134,9 +636,19 @@ class AppController extends Notifier<AppData> {
     if (homeTeamId == awayTeamId) {
       throw StateError('Choose two different teams.');
     }
-    await _updateTournament(
-      tournamentId,
-      (tournament) => tournament.copyWith(
+    await _updateTournament(tournamentId, (tournament) {
+      if (tournament.format == TournamentFormat.knockoutOnly) {
+        throw StateError(
+          'Generate the configured knockout bracket instead of adding a pool game.',
+        );
+      }
+      final home = tournament.team(homeTeamId);
+      final away = tournament.team(awayTeamId);
+      if (tournament.format == TournamentFormat.poolsThenKnockout &&
+          home.poolNumber != away.poolNumber) {
+        throw StateError('Pool games must use teams from the same pool.');
+      }
+      return tournament.copyWith(
         status: TournamentStatus.active,
         games: [
           ...tournament.games,
@@ -147,10 +659,14 @@ class AppController extends Notifier<AppData> {
             awayTeamId: awayTeamId,
             scheduledAt: scheduledAt,
             venue: venue,
+            poolNumber: tournament.format == TournamentFormat.poolsThenKnockout
+                ? home.poolNumber
+                : 1,
+            rulesSnapshot: tournament.effectivePoolRules,
           ),
         ],
-      ),
-    );
+      );
+    });
   }
 
   Future<void> updateRules(String tournamentId, MatchRules rules) async {
@@ -162,9 +678,24 @@ class AppController extends Notifier<AppData> {
     }
     await _updateTournament(
       tournamentId,
-      (tournament) => tournament.copyWith(rules: rules),
+      (tournament) => tournament.copyWith(
+        rules: rules,
+        poolRules: _applyMatchLength(rules, tournament.effectivePoolRules),
+        semifinalRules: _applyMatchLength(
+          rules,
+          tournament.effectiveSemifinalRules,
+        ),
+        finalRules: _applyMatchLength(rules, tournament.effectiveFinalRules),
+        thirdPlaceRules: _applyMatchLength(
+          rules,
+          tournament.effectiveThirdPlaceRules,
+        ),
+      ),
     );
   }
+
+  MatchRules _applyMatchLength(MatchRules base, MatchRules format) =>
+      base.copyWith(setsToWin: format.setsToWin, maxSets: format.maxSets);
 
   Future<void> startScorerLog(
     String tournamentId,
@@ -227,7 +758,7 @@ class AppController extends Notifier<AppData> {
         id: _uuid.v4(),
         game: game,
         log: log,
-        rules: tournament.rules,
+        rules: tournament.rulesFor(game),
         winnerTeamId: winnerTeamId,
         recordedAt: DateTime.now(),
         actions: actions,
@@ -241,7 +772,7 @@ class AppController extends Notifier<AppData> {
       final score = const ScoringEngine().score(
         game,
         logs[index],
-        tournament.rules,
+        tournament.rulesFor(game),
       );
       return game.copyWith(
         status: score.isComplete
@@ -369,7 +900,7 @@ class AppController extends Notifier<AppData> {
       final score = const ScoringEngine().score(
         game,
         official,
-        tournament.rules,
+        tournament.rulesFor(game),
       );
       if (!score.isComplete) {
         throw StateError(
@@ -406,6 +937,17 @@ class AppController extends Notifier<AppData> {
         clearOfficialLog: true,
       ),
     );
+  }
+
+  Future<void> deleteGame(String tournamentId, String gameId) async {
+    await _updateTournament(tournamentId, (tournament) {
+      if (!tournament.games.any((game) => game.id == gameId)) {
+        throw StateError('Game not found.');
+      }
+      return tournament.copyWith(
+        games: tournament.games.where((game) => game.id != gameId).toList(),
+      );
+    });
   }
 
   Future<void> restoreBackup(AppData backup) => _commit(

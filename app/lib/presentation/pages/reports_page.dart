@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/file_exchange.dart';
 import '../../application/providers.dart';
+import '../../domain/models.dart';
 import '../../domain/statistics.dart';
 import '../widgets/common.dart';
 
@@ -40,6 +41,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       orElse: () => tournaments.first,
     );
     final standings = const StatisticsService().standings(tournament);
+    final standingsByPool =
+        tournament.format == TournamentFormat.poolsThenKnockout
+        ? {
+            for (var pool = 1; pool <= tournament.poolCount; pool++)
+              pool: const StatisticsService().standings(
+                tournament,
+                poolNumber: pool,
+              ),
+          }
+        : {1: standings};
     final players = const StatisticsService().playerSummaries(tournament);
     return ListView(
       padding: const EdgeInsets.only(bottom: 30),
@@ -89,44 +100,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
         ),
         const SizedBox(height: 22),
         _ReportSection(
-          title: 'Standings',
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('#')),
-                DataColumn(label: Text('Team')),
-                DataColumn(label: Text('P')),
-                DataColumn(label: Text('W')),
-                DataColumn(label: Text('L')),
-                DataColumn(label: Text('Pts')),
-                DataColumn(label: Text('Sets')),
-                DataColumn(label: Text('Points')),
-              ],
-              rows: [
-                for (var i = 0; i < standings.length; i++)
-                  DataRow(
-                    cells: [
-                      DataCell(Text('${i + 1}')),
-                      DataCell(Text(standings[i].team.name)),
-                      DataCell(Text('${standings[i].played}')),
-                      DataCell(Text('${standings[i].wins}')),
-                      DataCell(Text('${standings[i].losses}')),
-                      DataCell(Text('${standings[i].matchPoints}')),
-                      DataCell(
-                        Text(
-                          '${standings[i].setsWon}-${standings[i].setsLost}',
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          '${standings[i].pointsWon}-${standings[i].pointsLost}',
-                        ),
-                      ),
-                    ],
+          title: tournament.format == TournamentFormat.poolsThenKnockout
+              ? 'Pool standings'
+              : 'Standings',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final entry in standingsByPool.entries) ...[
+                if (standingsByPool.length > 1)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                    child: Text(
+                      'Pool ${String.fromCharCode('A'.codeUnitAt(0) + entry.key - 1)}',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
                   ),
+                _standingsTable(entry.value),
               ],
-            ),
+            ],
           ),
         ),
         _ReportSection(
@@ -169,6 +161,41 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
       ],
     );
   }
+
+  Widget _standingsTable(List<StandingRow> standings) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: DataTable(
+      columns: const [
+        DataColumn(label: Text('#')),
+        DataColumn(label: Text('Team')),
+        DataColumn(label: Text('P')),
+        DataColumn(label: Text('W')),
+        DataColumn(label: Text('L')),
+        DataColumn(label: Text('Pts')),
+        DataColumn(label: Text('Sets')),
+        DataColumn(label: Text('Points')),
+      ],
+      rows: [
+        for (var i = 0; i < standings.length; i++)
+          DataRow(
+            cells: [
+              DataCell(Text('${i + 1}')),
+              DataCell(Text(standings[i].team.name)),
+              DataCell(Text('${standings[i].played}')),
+              DataCell(Text('${standings[i].wins}')),
+              DataCell(Text('${standings[i].losses}')),
+              DataCell(Text('${standings[i].matchPoints}')),
+              DataCell(
+                Text('${standings[i].setsWon}-${standings[i].setsLost}'),
+              ),
+              DataCell(
+                Text('${standings[i].pointsWon}-${standings[i].pointsLost}'),
+              ),
+            ],
+          ),
+      ],
+    ),
+  );
 
   Future<void> _export(Future<void> Function() action) async {
     try {

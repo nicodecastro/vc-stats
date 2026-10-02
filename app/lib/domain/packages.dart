@@ -66,7 +66,7 @@ class GamePackage {
 
 class PortablePackageService {
   const PortablePackageService();
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
 
   GamePackage createGamePackage({
     required String packageId,
@@ -164,7 +164,7 @@ class PortablePackageService {
   ) {
     if (manifest.schemaVersion > schemaVersion) {
       throw const FormatException(
-        'This package was created by a newer VC Sets version.',
+        'This package was created by a newer VC SETS version.',
       );
     }
     if (manifest.type != expectedType) {

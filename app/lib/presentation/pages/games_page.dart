@@ -56,20 +56,62 @@ class GamesPage extends ConsumerWidget {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(
-                          '${item.tournament.name} • ${DateFormat.MMMd().add_jm().format(item.game.scheduledAt)}\n${item.game.status.name} • ${item.game.logs.length}/2 scorer logs',
+                          '${item.tournament.name} • ${DateFormat.MMMd().add_jm().format(item.game.scheduledAt)}\n${_gameLabel(item.game)} • best of ${item.tournament.rulesFor(item.game).maxSets} • ${item.game.status.name} • ${item.game.logs.length}/2 scorer logs',
                         ),
                         isThreeLine: true,
-                        trailing: FilledButton.tonal(
-                          onPressed: () => item.game.logs.length >= 2
-                              ? context.push(
-                                  '/tournaments/${item.tournament.id}/games/${item.game.id}/reconcile',
-                                )
-                              : context.push(
-                                  '/tournaments/${item.tournament.id}/games/${item.game.id}/track',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FilledButton.tonal(
+                              onPressed: () => item.game.logs.length >= 2
+                                  ? context.push(
+                                      '/tournaments/${item.tournament.id}/games/${item.game.id}/reconcile',
+                                    )
+                                  : context.push(
+                                      '/tournaments/${item.tournament.id}/games/${item.game.id}/track',
+                                    ),
+                              child: Text(
+                                item.game.logs.length >= 2
+                                    ? 'Reconcile'
+                                    : 'Track',
+                              ),
+                            ),
+                            PopupMenuButton<String>(
+                              tooltip: 'Game actions',
+                              onSelected: (value) {
+                                if (value == 'delete') {
+                                  _deleteGame(
+                                    context,
+                                    ref,
+                                    item.tournament,
+                                    item.game,
+                                  );
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'delete',
+                                  child: ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: Icon(
+                                      Icons.delete_outline,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .error,
+                                    ),
+                                    title: Text(
+                                      'Delete game',
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                          child: Text(
-                            item.game.logs.length >= 2 ? 'Reconcile' : 'Track',
-                          ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     );
@@ -78,5 +120,44 @@ class GamesPage extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  String _gameLabel(Game game) {
+    if (game.stage == GameStage.pool) {
+      final pool = game.poolNumber;
+      return pool == null
+          ? 'Round robin'
+          : 'Pool ${String.fromCharCode('A'.codeUnitAt(0) + pool - 1)}';
+    }
+    return switch (game.bracketType) {
+      BracketGameType.finalMatch => 'Final',
+      BracketGameType.thirdPlace => 'Third-place game',
+      BracketGameType.standard => 'Knockout round ${game.bracketRound}',
+    };
+  }
+
+  Future<void> _deleteGame(
+    BuildContext context,
+    WidgetRef ref,
+    Tournament tournament,
+    Game game,
+  ) async {
+    final confirmed = await confirmDeleteGame(
+      context,
+      tournament: tournament,
+      game: game,
+    );
+    if (!confirmed || !context.mounted) return;
+    try {
+      await ref
+          .read(appControllerProvider.notifier)
+          .deleteGame(tournament.id, game.id);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Game deleted.')));
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
   }
 }

@@ -61,7 +61,7 @@ class AppShell extends StatelessWidget {
                       if (constraints.maxWidth >= 1100) ...[
                         const SizedBox(width: 12),
                         Text(
-                          'VC Sets',
+                          'VC SETS',
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                         ),

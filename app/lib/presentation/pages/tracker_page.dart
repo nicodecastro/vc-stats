@@ -55,7 +55,11 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     final log = localLogs.first;
     final assigned = tournament.team(log.assignedTeamId);
     selectedPlayerId ??= assigned.players.firstOrNull?.id;
-    final score = const ScoringEngine().score(game, log, tournament.rules);
+    final score = const ScoringEngine().score(
+      game,
+      log,
+      tournament.rulesFor(game),
+    );
     return Scaffold(
       appBar: AppBar(
         title: Text('${home.shortCode} vs ${away.shortCode}'),

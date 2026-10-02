@@ -4,15 +4,13 @@ enum TournamentStatus { draft, active, completed }
 
 enum GameStatus { scheduled, inProgress, awaitingReconciliation, finalized }
 
-enum PlayerPosition {
-  S,
-  OH,
-  OPP,
-  MB,
-  L,
-  DS,
-  UT,
-}
+enum GameStage { pool, bracket }
+
+enum TournamentFormat { roundRobin, poolsThenKnockout, knockoutOnly }
+
+enum BracketGameType { standard, finalMatch, thirdPlace }
+
+enum PlayerPosition { S, OH, OPP, MB, L, DS, UT }
 
 enum Skill {
   serve,
@@ -80,6 +78,7 @@ class TournamentTeam {
     required this.name,
     required this.shortCode,
     required this.colorValue,
+    this.poolNumber = 1,
     this.players = const [],
   });
 
@@ -87,21 +86,25 @@ class TournamentTeam {
   final String name;
   final String shortCode;
   final int colorValue;
+  final int poolNumber;
   final List<Player> players;
 
-  TournamentTeam copyWith({List<Player>? players}) => TournamentTeam(
-    id: id,
-    name: name,
-    shortCode: shortCode,
-    colorValue: colorValue,
-    players: players ?? this.players,
-  );
+  TournamentTeam copyWith({int? poolNumber, List<Player>? players}) =>
+      TournamentTeam(
+        id: id,
+        name: name,
+        shortCode: shortCode,
+        colorValue: colorValue,
+        poolNumber: poolNumber ?? this.poolNumber,
+        players: players ?? this.players,
+      );
 
   Map<String, Object?> toJson() => {
     'id': id,
     'name': name,
     'shortCode': shortCode,
     'colorValue': colorValue,
+    'poolNumber': poolNumber,
     'players': players.map((player) => player.toJson()).toList(),
   };
 
@@ -110,6 +113,7 @@ class TournamentTeam {
     name: json['name']! as String,
     shortCode: json['shortCode']! as String,
     colorValue: (json['colorValue'] as num).toInt(),
+    poolNumber: (json['poolNumber'] as num?)?.toInt() ?? 1,
     players: (json['players'] as List<Object?>? ?? const [])
         .map((item) => Player.fromJson((item as Map).cast<String, Object?>()))
         .toList(),
@@ -172,6 +176,22 @@ class MatchRules {
   final int winBy;
   final int maxSets;
   final StandingsPolicy standings;
+
+  MatchRules copyWith({
+    int? setsToWin,
+    int? regularSetTarget,
+    int? decidingSetTarget,
+    int? winBy,
+    int? maxSets,
+    StandingsPolicy? standings,
+  }) => MatchRules(
+    setsToWin: setsToWin ?? this.setsToWin,
+    regularSetTarget: regularSetTarget ?? this.regularSetTarget,
+    decidingSetTarget: decidingSetTarget ?? this.decidingSetTarget,
+    winBy: winBy ?? this.winBy,
+    maxSets: maxSets ?? this.maxSets,
+    standings: standings ?? this.standings,
+  );
 
   Map<String, Object?> toJson() => {
     'setsToWin': setsToWin,
@@ -484,6 +504,12 @@ class Game {
     required this.awayTeamId,
     required this.scheduledAt,
     required this.venue,
+    this.stage = GameStage.pool,
+    this.poolNumber,
+    this.bracketRound,
+    this.bracketOrder,
+    this.bracketType = BracketGameType.standard,
+    this.rulesSnapshot,
     this.status = GameStatus.scheduled,
     this.logs = const [],
     this.officialLog,
@@ -496,6 +522,12 @@ class Game {
   final String awayTeamId;
   final DateTime scheduledAt;
   final String venue;
+  final GameStage stage;
+  final int? poolNumber;
+  final int? bracketRound;
+  final int? bracketOrder;
+  final BracketGameType bracketType;
+  final MatchRules? rulesSnapshot;
   final GameStatus status;
   final List<ScorerLog> logs;
   final ScorerLog? officialLog;
@@ -514,6 +546,12 @@ class Game {
     awayTeamId: awayTeamId,
     scheduledAt: scheduledAt,
     venue: venue,
+    stage: stage,
+    poolNumber: poolNumber,
+    bracketRound: bracketRound,
+    bracketOrder: bracketOrder,
+    bracketType: bracketType,
+    rulesSnapshot: rulesSnapshot,
     status: status ?? this.status,
     logs: logs ?? this.logs,
     officialLog: clearOfficialLog ? null : (officialLog ?? this.officialLog),
@@ -527,6 +565,12 @@ class Game {
     'awayTeamId': awayTeamId,
     'scheduledAt': scheduledAt.toUtc().toIso8601String(),
     'venue': venue,
+    'stage': stage.name,
+    'poolNumber': poolNumber,
+    'bracketRound': bracketRound,
+    'bracketOrder': bracketOrder,
+    'bracketType': bracketType.name,
+    'rulesSnapshot': rulesSnapshot?.toJson(),
     'status': status.name,
     'logs': logs.map((log) => log.toJson()).toList(),
     'officialLog': officialLog?.toJson(),
@@ -540,6 +584,20 @@ class Game {
     awayTeamId: json['awayTeamId']! as String,
     scheduledAt: DateTime.parse(json['scheduledAt']! as String),
     venue: json['venue'] as String? ?? '',
+    stage: enumByName(GameStage.values, json['stage'], GameStage.pool),
+    poolNumber: (json['poolNumber'] as num?)?.toInt(),
+    bracketRound: (json['bracketRound'] as num?)?.toInt(),
+    bracketOrder: (json['bracketOrder'] as num?)?.toInt(),
+    bracketType: enumByName(
+      BracketGameType.values,
+      json['bracketType'],
+      BracketGameType.standard,
+    ),
+    rulesSnapshot: json['rulesSnapshot'] == null
+        ? null
+        : MatchRules.fromJson(
+            (json['rulesSnapshot']! as Map).cast<String, Object?>(),
+          ),
     status: enumByName(GameStatus.values, json['status'], GameStatus.scheduled),
     logs: (json['logs'] as List<Object?>? ?? const [])
         .map(
@@ -571,9 +629,25 @@ class Tournament {
     required this.createdAt,
     this.status = TournamentStatus.draft,
     this.rules = const MatchRules(),
+    TournamentFormat? format,
+    int? knockoutSize,
+    bool? bracketEnabled,
+    int? bracketSize,
+    this.poolCount = 1,
+    this.qualifiersPerPool = 2,
+    this.thirdPlaceEnabled = false,
+    this.poolRules,
+    this.semifinalRules,
+    this.finalRules,
+    this.thirdPlaceRules,
     this.teams = const [],
     this.games = const [],
-  });
+  }) : format =
+           format ??
+           ((bracketEnabled ?? false)
+               ? TournamentFormat.poolsThenKnockout
+               : TournamentFormat.roundRobin),
+       knockoutSize = knockoutSize ?? bracketSize ?? 2;
 
   final String id;
   final String name;
@@ -583,23 +657,82 @@ class Tournament {
   final DateTime createdAt;
   final TournamentStatus status;
   final MatchRules rules;
+  final TournamentFormat format;
+  final int poolCount;
+  final int qualifiersPerPool;
+  final int knockoutSize;
+  final bool thirdPlaceEnabled;
+  final MatchRules? poolRules;
+  final MatchRules? semifinalRules;
+  final MatchRules? finalRules;
+  final MatchRules? thirdPlaceRules;
   final List<TournamentTeam> teams;
   final List<Game> games;
 
+  bool get bracketEnabled => format != TournamentFormat.roundRobin;
+  int get bracketSize => format == TournamentFormat.poolsThenKnockout
+      ? poolCount * qualifiersPerPool
+      : knockoutSize;
+
+  MatchRules get effectivePoolRules => poolRules ?? rules;
+  MatchRules get effectiveSemifinalRules => semifinalRules ?? rules;
+  MatchRules get effectiveFinalRules => finalRules ?? rules;
+  MatchRules get effectiveThirdPlaceRules => thirdPlaceRules ?? rules;
+
+  MatchRules rulesFor(Game game) {
+    if (game.rulesSnapshot != null) return game.rulesSnapshot!;
+    if (game.stage == GameStage.pool) return effectivePoolRules;
+    return switch (game.bracketType) {
+      BracketGameType.finalMatch => effectiveFinalRules,
+      BracketGameType.thirdPlace => effectiveThirdPlaceRules,
+      BracketGameType.standard => effectiveSemifinalRules,
+    };
+  }
+
   Tournament copyWith({
+    String? name,
+    String? venue,
+    DateTime? startsOn,
+    DateTime? endsOn,
     TournamentStatus? status,
     MatchRules? rules,
+    TournamentFormat? format,
+    int? poolCount,
+    int? qualifiersPerPool,
+    int? knockoutSize,
+    bool? thirdPlaceEnabled,
+    MatchRules? poolRules,
+    MatchRules? semifinalRules,
+    MatchRules? finalRules,
+    MatchRules? thirdPlaceRules,
+    bool? bracketEnabled,
+    int? bracketSize,
     List<TournamentTeam>? teams,
     List<Game>? games,
   }) => Tournament(
     id: id,
-    name: name,
-    venue: venue,
-    startsOn: startsOn,
-    endsOn: endsOn,
+    name: name ?? this.name,
+    venue: venue ?? this.venue,
+    startsOn: startsOn ?? this.startsOn,
+    endsOn: endsOn ?? this.endsOn,
     createdAt: createdAt,
     status: status ?? this.status,
     rules: rules ?? this.rules,
+    format:
+        format ??
+        (bracketEnabled == null
+            ? this.format
+            : (bracketEnabled
+                  ? TournamentFormat.poolsThenKnockout
+                  : TournamentFormat.roundRobin)),
+    poolCount: poolCount ?? this.poolCount,
+    qualifiersPerPool: qualifiersPerPool ?? this.qualifiersPerPool,
+    knockoutSize: knockoutSize ?? bracketSize ?? this.knockoutSize,
+    thirdPlaceEnabled: thirdPlaceEnabled ?? this.thirdPlaceEnabled,
+    poolRules: poolRules ?? this.poolRules,
+    semifinalRules: semifinalRules ?? this.semifinalRules,
+    finalRules: finalRules ?? this.finalRules,
+    thirdPlaceRules: thirdPlaceRules ?? this.thirdPlaceRules,
     teams: teams ?? this.teams,
     games: games ?? this.games,
   );
@@ -616,6 +749,17 @@ class Tournament {
     'createdAt': createdAt.toUtc().toIso8601String(),
     'status': status.name,
     'rules': rules.toJson(),
+    'format': format.name,
+    'poolCount': poolCount,
+    'qualifiersPerPool': qualifiersPerPool,
+    'knockoutSize': knockoutSize,
+    'thirdPlaceEnabled': thirdPlaceEnabled,
+    'poolRules': poolRules?.toJson(),
+    'semifinalRules': semifinalRules?.toJson(),
+    'finalRules': finalRules?.toJson(),
+    'thirdPlaceRules': thirdPlaceRules?.toJson(),
+    'bracketEnabled': bracketEnabled,
+    'bracketSize': bracketSize,
     'teams': teams.map((team) => team.toJson()).toList(),
     'games': games.map((game) => game.toJson()).toList(),
   };
@@ -635,6 +779,43 @@ class Tournament {
     rules: MatchRules.fromJson(
       ((json['rules'] as Map?) ?? const {}).cast<String, Object?>(),
     ),
+    format: json['format'] == null
+        ? null
+        : enumByName(
+            TournamentFormat.values,
+            json['format'],
+            TournamentFormat.roundRobin,
+          ),
+    poolCount: (json['poolCount'] as num?)?.toInt() ?? 1,
+    qualifiersPerPool:
+        (json['qualifiersPerPool'] as num?)?.toInt() ??
+        (json['format'] == null && (json['bracketEnabled'] as bool? ?? false)
+            ? (json['bracketSize'] as num?)?.toInt() ?? 2
+            : 2),
+    knockoutSize: (json['knockoutSize'] as num?)?.toInt(),
+    thirdPlaceEnabled: json['thirdPlaceEnabled'] as bool? ?? false,
+    poolRules: json['poolRules'] == null
+        ? null
+        : MatchRules.fromJson(
+            (json['poolRules']! as Map).cast<String, Object?>(),
+          ),
+    semifinalRules: json['semifinalRules'] == null
+        ? null
+        : MatchRules.fromJson(
+            (json['semifinalRules']! as Map).cast<String, Object?>(),
+          ),
+    finalRules: json['finalRules'] == null
+        ? null
+        : MatchRules.fromJson(
+            (json['finalRules']! as Map).cast<String, Object?>(),
+          ),
+    thirdPlaceRules: json['thirdPlaceRules'] == null
+        ? null
+        : MatchRules.fromJson(
+            (json['thirdPlaceRules']! as Map).cast<String, Object?>(),
+          ),
+    bracketEnabled: json['bracketEnabled'] as bool? ?? false,
+    bracketSize: (json['bracketSize'] as num?)?.toInt() ?? 2,
     teams: (json['teams'] as List<Object?>? ?? const [])
         .map(
           (item) =>
@@ -672,7 +853,7 @@ class AppData {
   );
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 1,
+    'schemaVersion': 2,
     'deviceId': deviceId,
     'tournaments': tournaments.map((item) => item.toJson()).toList(),
     'importedPackageIds': importedPackageIds,

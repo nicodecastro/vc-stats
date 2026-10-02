@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../domain/models.dart';
+
 class PageHeader extends StatelessWidget {
   const PageHeader({
     super.key,
@@ -84,4 +86,46 @@ void showError(BuildContext context, Object error) {
       backgroundColor: Theme.of(context).colorScheme.error,
     ),
   );
+}
+
+Future<bool> confirmDeleteGame(
+  BuildContext context, {
+  required Tournament tournament,
+  required Game game,
+}) async {
+  final home = tournament.team(game.homeTeamId);
+  final away = tournament.team(game.awayTeamId);
+  final hasRecordedData =
+      game.logs.isNotEmpty ||
+      game.officialLog != null ||
+      game.status == GameStatus.finalized;
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: Icon(
+            Icons.delete_forever_outlined,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: const Text('Delete game?'),
+          content: Text(
+            '${home.name} vs ${away.name} will be permanently removed.'
+            '${hasRecordedData ? '\n\nThis game contains recorded data. Its scorer logs, official result, player statistics, and standings contribution will also be removed.' : ''}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete game'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
 }

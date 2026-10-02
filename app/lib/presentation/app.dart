@@ -68,7 +68,7 @@ class VcSetsApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
-    title: 'VC Sets',
+    title: 'VC SETS',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
     routerConfig: _router,

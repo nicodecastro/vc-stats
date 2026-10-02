@@ -53,4 +53,53 @@ void main() {
     expect(restored.tournaments.single.name, 'Club Cup');
     expect(restored.importedPackageIds, ['one']);
   });
+
+  test('backup preserves pools, phase rules, and third-place games', () {
+    const bestOfThree = MatchRules(setsToWin: 2, maxSets: 3);
+    final tournament = Tournament(
+      id: 'phased',
+      name: 'Phased Cup',
+      venue: 'Gym',
+      startsOn: DateTime.utc(2026, 10, 2),
+      endsOn: DateTime.utc(2026, 10, 3),
+      createdAt: DateTime.utc(2026, 9, 1),
+      format: TournamentFormat.poolsThenKnockout,
+      poolCount: 2,
+      qualifiersPerPool: 2,
+      thirdPlaceEnabled: true,
+      poolRules: bestOfThree,
+      thirdPlaceRules: bestOfThree,
+      teams: [
+        homeTeam.copyWith(poolNumber: 1),
+        awayTeam.copyWith(poolNumber: 2),
+      ],
+      games: [
+        Game(
+          id: 'bronze',
+          tournamentId: 'phased',
+          homeTeamId: homeTeam.id,
+          awayTeamId: awayTeam.id,
+          scheduledAt: DateTime.utc(2026, 10, 3),
+          venue: 'Gym',
+          stage: GameStage.bracket,
+          bracketRound: 2,
+          bracketType: BracketGameType.thirdPlace,
+          rulesSnapshot: bestOfThree,
+        ),
+      ],
+    );
+    final source = service.createBackup(
+      packageId: 'phased-backup',
+      data: AppData(deviceId: 'device-a', tournaments: [tournament]),
+      exportedAt: DateTime.utc(2026, 10, 2),
+    );
+
+    final restored = service.decodeBackup(source).tournaments.single;
+    expect(restored.format, TournamentFormat.poolsThenKnockout);
+    expect(restored.poolCount, 2);
+    expect(restored.thirdPlaceEnabled, isTrue);
+    expect(restored.teams.last.poolNumber, 2);
+    expect(restored.games.single.bracketType, BracketGameType.thirdPlace);
+    expect(restored.games.single.rulesSnapshot?.maxSets, 3);
+  });
 }

@@ -106,16 +106,27 @@ class StatisticsService {
       ..sort((a, b) => b.totalSuccesses.compareTo(a.totalSuccesses));
   }
 
-  List<StandingRow> standings(Tournament tournament) {
+  List<StandingRow> standings(Tournament tournament, {int? poolNumber}) {
     final mutable = <String, _MutableStanding>{
-      for (final team in tournament.teams) team.id: _MutableStanding(team),
+      for (final team in tournament.teams)
+        if (poolNumber == null || team.poolNumber == poolNumber)
+          team.id: _MutableStanding(team),
     };
     for (final game in tournament.games.where(
-      (game) => game.status == GameStatus.finalized && game.officialLog != null,
+      (game) =>
+          game.stage == GameStage.pool &&
+          (poolNumber == null ||
+              game.poolNumber == poolNumber ||
+              game.poolNumber == null &&
+                  tournament.team(game.homeTeamId).poolNumber == poolNumber) &&
+          game.status == GameStatus.finalized &&
+          game.officialLog != null,
     )) {
-      final home = mutable[game.homeTeamId]!;
-      final away = mutable[game.awayTeamId]!;
-      final sets = _setResults(game.officialLog!, tournament.rules);
+      final home = mutable[game.homeTeamId];
+      final away = mutable[game.awayTeamId];
+      if (home == null || away == null) continue;
+      final gameRules = tournament.rulesFor(game);
+      final sets = _setResults(game.officialLog!, gameRules);
       home.played++;
       away.played++;
       home.setsWon += sets.homeSets;
@@ -135,11 +146,11 @@ class StatisticsService {
       (homeWon ? home : away).wins++;
       (homeWon ? away : home).losses++;
       final deciding =
-          sets.homeSets == tournament.rules.setsToWin &&
-              sets.awaySets == tournament.rules.setsToWin - 1 ||
-          sets.awaySets == tournament.rules.setsToWin &&
-              sets.homeSets == tournament.rules.setsToWin - 1;
-      final policy = tournament.rules.standings;
+          sets.homeSets == gameRules.setsToWin &&
+              sets.awaySets == gameRules.setsToWin - 1 ||
+          sets.awaySets == gameRules.setsToWin &&
+              sets.homeSets == gameRules.setsToWin - 1;
+      final policy = gameRules.standings;
       if (deciding) {
         (homeWon ? home : away).matchPoints += policy.decidingWinPoints;
         (homeWon ? away : home).matchPoints += policy.decidingLossPoints;
@@ -150,7 +161,7 @@ class StatisticsService {
     }
     final rows = mutable.values.map((item) => item.freeze()).toList();
     rows.sort((a, b) {
-      for (final rule in tournament.rules.standings.tieBreakers) {
+      for (final rule in tournament.effectivePoolRules.standings.tieBreakers) {
         final comparison = switch (rule) {
           'wins' => b.wins.compareTo(a.wins),
           'setRatio' => b.setRatio.compareTo(a.setRatio),
