@@ -549,4 +549,83 @@ void main() {
     expect(thirdPlace.rulesSnapshot?.maxSets, 3);
     expect(thirdPlace.scheduledAt.isBefore(finalGame.scheduledAt), isTrue);
   });
+
+  test(
+    'records R-5 lineups, substitutions, and two timeouts per set',
+    () async {
+      const benchPlayer = Player(
+        id: 'home-bench',
+        number: 20,
+        name: 'Bench Player',
+        position: PlayerPosition.OH,
+      );
+      final trackedHome = homeTeam.copyWith(
+        players: [...homeTeam.players, benchPlayer],
+      );
+      final game = Game(
+        id: 'game',
+        tournamentId: 'tournament',
+        homeTeamId: trackedHome.id,
+        awayTeamId: awayTeam.id,
+        scheduledAt: DateTime.utc(2026, 10, 2),
+        venue: 'Gym',
+      );
+      final tournament = Tournament(
+        id: 'tournament',
+        name: 'League',
+        venue: 'Gym',
+        startsOn: DateTime.utc(2026, 10, 2),
+        endsOn: DateTime.utc(2026, 10, 2),
+        createdAt: DateTime.utc(2026, 9, 1),
+        teams: [trackedHome, awayTeam],
+        games: [game],
+      );
+      final initial = AppData(deviceId: 'device', tournaments: [tournament]);
+      final repository = MemoryAppRepository(initial);
+      final container = ProviderContainer(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(initial),
+        ],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(appControllerProvider.notifier);
+
+      await controller.startScorerLog(
+        'tournament',
+        'game',
+        assignedTeamId: trackedHome.id,
+        initialServingTeamId: trackedHome.id,
+      );
+      final serviceOrder = trackedHome.players
+          .take(6)
+          .map((p) => p.id)
+          .toList();
+      await controller.setLineup(
+        'tournament',
+        'game',
+        setNumber: 1,
+        playerIds: serviceOrder,
+      );
+      await controller.recordSubstitution(
+        'tournament',
+        'game',
+        playerOutId: serviceOrder.first,
+        playerInId: benchPlayer.id,
+      );
+      await controller.recordTimeout('tournament', 'game');
+      await controller.recordTimeout('tournament', 'game');
+
+      final log =
+          (await repository.load()).tournaments.single.games.single.logs.single;
+      expect(log.substitutions, hasLength(1));
+      expect(log.timeouts, hasLength(2));
+      expect(log.serviceOrderFor(trackedHome.id, 1).first, benchPlayer.id);
+      expect(log.courtOrderFor(trackedHome.id, 1, 2).last, benchPlayer.id);
+      await expectLater(
+        controller.recordTimeout('tournament', 'game'),
+        throwsStateError,
+      );
+    },
+  );
 }

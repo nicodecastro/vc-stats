@@ -66,7 +66,7 @@ class GamePackage {
 
 class PortablePackageService {
   const PortablePackageService();
-  static const schemaVersion = 2;
+  static const schemaVersion = 3;
 
   GamePackage createGamePackage({
     required String packageId,

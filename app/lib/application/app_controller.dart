@@ -342,6 +342,13 @@ class AppController extends Notifier<AppData> {
           )) {
             referencedPlayerIds.addAll(lineup.playerIds);
           }
+          for (final substitution in log.substitutions.where(
+            (item) => item.teamId == teamId,
+          )) {
+            referencedPlayerIds
+              ..add(substitution.playerOutId)
+              ..add(substitution.playerInId);
+          }
           for (final action in log.rallies.expand((rally) => rally.actions)) {
             if (action.teamId == teamId && action.playerId != null) {
               referencedPlayerIds.add(action.playerId!);
@@ -720,10 +727,12 @@ class AppController extends Notifier<AppData> {
           LineupSnapshot(
             teamId: home.id,
             playerIds: home.players.take(6).map((p) => p.id).toList(),
+            recordedAt: now,
           ),
           LineupSnapshot(
             teamId: away.id,
             playerIds: away.players.take(6).map((p) => p.id).toList(),
+            recordedAt: now,
           ),
         ],
       );
@@ -731,6 +740,147 @@ class AppController extends Notifier<AppData> {
         status: GameStatus.inProgress,
         logs: [...game.logs, log],
       );
+    });
+  }
+
+  Future<void> setLineup(
+    String tournamentId,
+    String gameId, {
+    required int setNumber,
+    required List<String> playerIds,
+  }) async {
+    await _updateGame(tournamentId, gameId, (tournament, game) {
+      final index = game.logs.indexWhere(
+        (log) => log.deviceId == state.deviceId,
+      );
+      if (index < 0) {
+        throw StateError('Start a scorer log on this device first.');
+      }
+      final log = game.logs[index];
+      final team = tournament.team(log.assignedTeamId);
+      final errors = const ScoringEngine().validateStartingLineup(
+        team,
+        playerIds,
+      );
+      if (errors.isNotEmpty) throw StateError(errors.join(' '));
+      final now = DateTime.now();
+      final logs = [...game.logs];
+      logs[index] = log.copyWith(
+        updatedAt: now,
+        lineups: [
+          ...log.lineups,
+          LineupSnapshot(
+            teamId: team.id,
+            playerIds: playerIds,
+            setNumber: setNumber,
+            recordedAt: now,
+          ),
+        ],
+      );
+      return game.copyWith(logs: logs);
+    });
+  }
+
+  Future<void> recordSubstitution(
+    String tournamentId,
+    String gameId, {
+    required String playerOutId,
+    required String playerInId,
+  }) async {
+    if (playerOutId == playerInId) {
+      throw StateError('Choose two different players.');
+    }
+    await _updateGame(tournamentId, gameId, (tournament, game) {
+      final index = game.logs.indexWhere(
+        (log) => log.deviceId == state.deviceId,
+      );
+      if (index < 0) {
+        throw StateError('Start a scorer log on this device first.');
+      }
+      final log = game.logs[index];
+      final score = const ScoringEngine().score(
+        game,
+        log,
+        tournament.rulesFor(game),
+      );
+      if (score.isComplete) throw StateError('The match is already complete.');
+      final team = tournament.team(log.assignedTeamId);
+      final serviceOrder = log.serviceOrderFor(team.id, score.setNumber);
+      if (!serviceOrder.contains(playerOutId)) {
+        throw StateError('The outgoing player is not currently on court.');
+      }
+      if (!team.players.any((player) => player.id == playerInId)) {
+        throw StateError(
+          'The incoming player is not on the tournament roster.',
+        );
+      }
+      if (serviceOrder.contains(playerInId)) {
+        throw StateError('The incoming player is already on court.');
+      }
+      final now = DateTime.now();
+      final logs = [...game.logs];
+      logs[index] = log.copyWith(
+        updatedAt: now,
+        substitutions: [
+          ...log.substitutions,
+          Substitution(
+            id: _uuid.v4(),
+            teamId: team.id,
+            setNumber: score.setNumber,
+            playerOutId: playerOutId,
+            playerInId: playerInId,
+            homeScore: score.homePoints,
+            awayScore: score.awayPoints,
+            recordedAt: now,
+          ),
+        ],
+      );
+      return game.copyWith(logs: logs);
+    });
+  }
+
+  Future<void> recordTimeout(String tournamentId, String gameId) async {
+    await _updateGame(tournamentId, gameId, (tournament, game) {
+      final index = game.logs.indexWhere(
+        (log) => log.deviceId == state.deviceId,
+      );
+      if (index < 0) {
+        throw StateError('Start a scorer log on this device first.');
+      }
+      final log = game.logs[index];
+      final score = const ScoringEngine().score(
+        game,
+        log,
+        tournament.rulesFor(game),
+      );
+      if (score.isComplete) throw StateError('The match is already complete.');
+      final used = log.timeouts
+          .where(
+            (timeout) =>
+                timeout.teamId == log.assignedTeamId &&
+                timeout.setNumber == score.setNumber,
+          )
+          .length;
+      if (used >= 2) {
+        throw StateError('This team has already used two timeouts this set.');
+      }
+      final now = DateTime.now();
+      final logs = [...game.logs];
+      logs[index] = log.copyWith(
+        updatedAt: now,
+        timeouts: [
+          ...log.timeouts,
+          TeamTimeout(
+            id: _uuid.v4(),
+            teamId: log.assignedTeamId,
+            setNumber: score.setNumber,
+            homeScore: score.homePoints,
+            awayScore: score.awayPoints,
+            recordedAt: now,
+          ),
+        ],
+      );
+      return game.copyWith(logs: logs);
     });
   }
 

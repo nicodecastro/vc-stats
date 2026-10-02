@@ -54,12 +54,36 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     }
     final log = localLogs.first;
     final assigned = tournament.team(log.assignedTeamId);
-    selectedPlayerId ??= assigned.players.firstOrNull?.id;
     final score = const ScoringEngine().score(
       game,
       log,
       tournament.rulesFor(game),
     );
+    final assignedRotation = assigned.id == game.homeTeamId
+        ? score.homeRotation
+        : score.awayRotation;
+    final courtPlayerIds = log.courtOrderFor(
+      assigned.id,
+      score.setNumber,
+      assignedRotation,
+    );
+    if (!courtPlayerIds.contains(selectedPlayerId)) {
+      selectedPlayerId = courtPlayerIds.firstOrNull;
+    }
+    final setTimeouts = log.timeouts
+        .where(
+          (timeout) =>
+              timeout.teamId == assigned.id &&
+              timeout.setNumber == score.setNumber,
+        )
+        .length;
+    final setSubstitutions = log.substitutions
+        .where(
+          (substitution) =>
+              substitution.teamId == assigned.id &&
+              substitution.setNumber == score.setNumber,
+        )
+        .length;
     return Scaffold(
       appBar: AppBar(
         title: Text('${home.shortCode} vs ${away.shortCode}'),
@@ -91,15 +115,34 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
             );
             final entryPanel = _EntryPanel(
               team: assigned,
+              setNumber: score.setNumber,
+              rotation: assignedRotation,
+              courtPlayerIds: courtPlayerIds,
               selectedPlayerId: selectedPlayerId,
+              timeoutsUsed: setTimeouts,
+              substitutionsUsed: setSubstitutions,
               pending: pending,
               onPlayerChanged: (value) =>
                   setState(() => selectedPlayerId = value),
               onAdd: _addAction,
               onRemove: (action) => setState(() => pending.remove(action)),
               onUndo: log.rallies.isEmpty ? null : _undo,
+              onEditLineup: score.isComplete
+                  ? null
+                  : () => _editLineup(assigned, log, score),
+              onSubstitution: score.isComplete || courtPlayerIds.length != 6
+                  ? null
+                  : () => _recordSubstitution(assigned, courtPlayerIds),
+              onTimeout: score.isComplete || setTimeouts >= 2
+                  ? null
+                  : () => _recordTimeout(assigned, score),
             );
-            final timeline = _Timeline(log: log, home: home, away: away);
+            final timeline = _Timeline(
+              log: log,
+              home: home,
+              away: away,
+              trackedTeam: assigned,
+            );
             if (wide) {
               return Row(
                 children: [
@@ -134,6 +177,217 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       ),
     );
   }
+
+  Future<void> _editLineup(
+    TournamentTeam team,
+    ScorerLog log,
+    MatchScore score,
+  ) async {
+    final existing = log.serviceOrderFor(team.id, score.setNumber);
+    final selected = existing.length == 6
+        ? [...existing]
+        : team.players.take(6).map((player) => player.id).toList();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('R-5 lineup • Set ${score.setNumber}'),
+          content: SizedBox(
+            width: 560,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Choose the six starting players in service order I–VI. Position I is the server/right-back position.',
+                  ),
+                  const SizedBox(height: 14),
+                  if (team.players.length < 6)
+                    const Text(
+                      'Add at least six rostered players before completing the lineup sheet.',
+                      style: TextStyle(color: Colors.deepOrange),
+                    )
+                  else
+                    for (var index = 0; index < 6; index++) ...[
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('lineup-$index-${selected[index]}'),
+                        initialValue: selected[index],
+                        decoration: InputDecoration(
+                          labelText: 'Position ${_roman(index + 1)}',
+                        ),
+                        items: team.players
+                            .map(
+                              (player) => DropdownMenuItem(
+                                value: player.id,
+                                child: Text(
+                                  '#${player.number} ${player.name}${player.isLibero ? ' • L' : ''}',
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) =>
+                            setDialogState(() => selected[index] = value!),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: team.players.length < 6
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              child: const Text('Save lineup'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true) return;
+    try {
+      await ref
+          .read(appControllerProvider.notifier)
+          .setLineup(
+            widget.tournamentId,
+            widget.gameId,
+            setNumber: score.setNumber,
+            playerIds: selected,
+          );
+      if (mounted) {
+        setState(() => selectedPlayerId = selected.first);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Set ${score.setNumber} lineup saved.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
+  }
+
+  Future<void> _recordSubstitution(
+    TournamentTeam team,
+    List<String> courtPlayerIds,
+  ) async {
+    final bench = team.players
+        .where((player) => !courtPlayerIds.contains(player.id))
+        .toList();
+    if (bench.isEmpty) {
+      showError(context, StateError('There are no available bench players.'));
+      return;
+    }
+    var outgoing = courtPlayerIds.contains(selectedPlayerId)
+        ? selectedPlayerId!
+        : courtPlayerIds.first;
+    var incoming = bench.first.id;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Record substitution'),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                DropdownButtonFormField<String>(
+                  initialValue: outgoing,
+                  decoration: const InputDecoration(labelText: 'Player out'),
+                  items: courtPlayerIds.map((id) {
+                    final player = team.players.firstWhere(
+                      (item) => item.id == id,
+                    );
+                    return DropdownMenuItem(
+                      value: id,
+                      child: Text('#${player.number} ${player.name}'),
+                    );
+                  }).toList(),
+                  onChanged: (value) => setDialogState(() => outgoing = value!),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: incoming,
+                  decoration: const InputDecoration(labelText: 'Player in'),
+                  items: bench
+                      .map(
+                        (player) => DropdownMenuItem(
+                          value: player.id,
+                          child: Text('#${player.number} ${player.name}'),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) => setDialogState(() => incoming = value!),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Record substitution'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (accepted != true) return;
+    try {
+      await ref
+          .read(appControllerProvider.notifier)
+          .recordSubstitution(
+            widget.tournamentId,
+            widget.gameId,
+            playerOutId: outgoing,
+            playerInId: incoming,
+          );
+      if (mounted) setState(() => selectedPlayerId = incoming);
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
+  }
+
+  Future<void> _recordTimeout(TournamentTeam team, MatchScore score) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${team.shortCode} timeout'),
+        content: Text(
+          'Record a timeout in set ${score.setNumber} at ${score.homePoints}-${score.awayPoints}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Record timeout'),
+          ),
+        ],
+      ),
+    );
+    if (accepted != true) return;
+    try {
+      await ref
+          .read(appControllerProvider.notifier)
+          .recordTimeout(widget.tournamentId, widget.gameId);
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
+  }
+
+  String _roman(int position) =>
+      const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
 
   void _addAction(Skill skill, ActionGrade grade, TournamentTeam team) {
     if (skill != Skill.timeout &&
@@ -454,20 +708,36 @@ class _TeamScore extends StatelessWidget {
 class _EntryPanel extends StatelessWidget {
   const _EntryPanel({
     required this.team,
+    required this.setNumber,
+    required this.rotation,
+    required this.courtPlayerIds,
     required this.selectedPlayerId,
+    required this.timeoutsUsed,
+    required this.substitutionsUsed,
     required this.pending,
     required this.onPlayerChanged,
     required this.onAdd,
     required this.onRemove,
     required this.onUndo,
+    required this.onEditLineup,
+    required this.onSubstitution,
+    required this.onTimeout,
   });
   final TournamentTeam team;
+  final int setNumber;
+  final int rotation;
+  final List<String> courtPlayerIds;
   final String? selectedPlayerId;
+  final int timeoutsUsed;
+  final int substitutionsUsed;
   final List<TeamAction> pending;
   final ValueChanged<String?> onPlayerChanged;
   final void Function(Skill, ActionGrade, TournamentTeam) onAdd;
   final ValueChanged<TeamAction> onRemove;
   final VoidCallback? onUndo;
+  final VoidCallback? onEditLineup;
+  final VoidCallback? onSubstitution;
+  final VoidCallback? onTimeout;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -491,23 +761,43 @@ class _EntryPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue:
-                team.players.any((player) => player.id == selectedPlayerId)
-                ? selectedPlayerId
-                : null,
-            decoration: const InputDecoration(labelText: 'Active player'),
-            items: team.players
-                .map(
-                  (player) => DropdownMenuItem(
-                    value: player.id,
-                    child: Text('#${player.number} ${player.name}'),
-                  ),
-                )
-                .toList(),
-            onChanged: onPlayerChanged,
+          _HalfCourt(
+            team: team,
+            playerIdsByPosition: courtPlayerIds,
+            selectedPlayerId: selectedPlayerId,
+            onSelected: onPlayerChanged,
           ),
           const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onEditLineup,
+                icon: const Icon(Icons.format_list_numbered),
+                label: Text('R-5 lineup • Set $setNumber'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onSubstitution,
+                icon: const Icon(Icons.swap_horiz),
+                label: Text('Substitution ($substitutionsUsed)'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onTimeout,
+                icon: const Icon(Icons.timer_outlined),
+                label: Text('Timeout ($timeoutsUsed/2)'),
+              ),
+              Chip(label: Text('Rotation $rotation')),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(
+            selectedPlayerId == null
+                ? 'Select an on-court player'
+                : 'Selected: ${_playerLabel(team, selectedPlayerId!)}',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -532,18 +822,6 @@ class _EntryPanel extends StatelessWidget {
                     : () => onAdd(Skill.error, ActionGrade.error, team),
                 child: const Text('Error'),
               ),
-              OutlinedButton(
-                onPressed: () =>
-                    onAdd(Skill.timeout, ActionGrade.neutral, team),
-                child: const Text('Timeout'),
-              ),
-              OutlinedButton(
-                onPressed: selectedPlayerId == null
-                    ? null
-                    : () =>
-                          onAdd(Skill.substitution, ActionGrade.neutral, team),
-                child: const Text('Substitution'),
-              ),
             ],
           ),
           if (pending.isNotEmpty) ...[
@@ -567,57 +845,261 @@ class _EntryPanel extends StatelessWidget {
       ),
     ),
   );
+
+  String _playerLabel(TournamentTeam team, String playerId) {
+    final player = team.players
+        .where((item) => item.id == playerId)
+        .firstOrNull;
+    return player == null
+        ? 'Unknown player'
+        : '#${player.number} ${player.name}';
+  }
+}
+
+class _HalfCourt extends StatelessWidget {
+  const _HalfCourt({
+    required this.team,
+    required this.playerIdsByPosition,
+    required this.selectedPlayerId,
+    required this.onSelected,
+  });
+
+  final TournamentTeam team;
+  final List<String> playerIdsByPosition;
+  final String? selectedPlayerId;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    if (playerIdsByPosition.length != 6) {
+      return Container(
+        constraints: const BoxConstraints(minHeight: 180),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: const Padding(
+          padding: EdgeInsets.all(20),
+          child: Text(
+            'Complete the R-5 lineup to place six players on court.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: Color(team.colorValue).withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Color(team.colorValue).withValues(alpha: .5)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 8,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(15),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+            child: Text(
+              'NET • FRONT ROW',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+          _courtRow(context, const [4, 3, 2]),
+          const Divider(height: 10, indent: 8, endIndent: 8),
+          _courtRow(context, const [5, 6, 1]),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+
+  Widget _courtRow(BuildContext context, List<int> positions) => Row(
+    children: [
+      for (final position in positions)
+        Expanded(child: _playerButton(context, position)),
+    ],
+  );
+
+  Widget _playerButton(BuildContext context, int position) {
+    final playerId = playerIdsByPosition[position - 1];
+    final player = team.players.firstWhere((item) => item.id == playerId);
+    final selected = playerId == selectedPlayerId;
+    return Padding(
+      padding: const EdgeInsets.all(5),
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label:
+            'Position ${_roman(position)}, number ${player.number}, ${player.name}',
+        child: InkWell(
+          onTap: () => onSelected(playerId),
+          borderRadius: BorderRadius.circular(14),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            constraints: const BoxConstraints(minHeight: 74),
+            decoration: BoxDecoration(
+              color: selected
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.outlineVariant,
+                width: selected ? 3 : 1,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '#${player.number}',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w900),
+                ),
+                Text(
+                  _roman(position),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _roman(int position) =>
+      const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
 }
 
 class _Timeline extends StatelessWidget {
-  const _Timeline({required this.log, required this.home, required this.away});
+  const _Timeline({
+    required this.log,
+    required this.home,
+    required this.away,
+    required this.trackedTeam,
+  });
   final ScorerLog log;
   final TournamentTeam home;
   final TournamentTeam away;
+  final TournamentTeam trackedTeam;
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
-        child: Text(
-          'Event timeline',
-          style: Theme.of(context).textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
+  Widget build(BuildContext context) {
+    final events = <_TimelineEvent>[
+      for (final rally in log.rallies) _TimelineEvent.rally(rally),
+      for (final substitution in log.substitutions)
+        _TimelineEvent.substitution(substitution),
+      for (final timeout in log.timeouts) _TimelineEvent.timeout(timeout),
+    ]..sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+          child: Text(
+            'Event timeline',
+            style: Theme.of(context).textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.bold),
+          ),
         ),
+        Expanded(
+          child: events.isEmpty
+              ? const Center(child: Text('The first event will appear here.'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: events.length,
+                  itemBuilder: (context, index) => _eventTile(events[index]),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _eventTile(_TimelineEvent event) {
+    final rally = event.rally;
+    if (rally != null) {
+      final winner = rally.winnerTeamId == home.id ? home : away;
+      return ListTile(
+        dense: true,
+        leading: CircleAvatar(
+          radius: 17,
+          child: Text(
+            '${rally.sequence}',
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        title: Text(
+          '${winner.shortCode} point  •  ${rally.homeScore}-${rally.awayScore}',
+        ),
+        subtitle: Text(
+          'Set ${rally.setNumber}${rally.actions.isEmpty ? '' : ' • ${rally.actions.map((a) => a.skill.name).join(', ')}'}',
+        ),
+      );
+    }
+    final substitution = event.substitution;
+    if (substitution != null) {
+      final outgoing = trackedTeam.players.firstWhere(
+        (player) => player.id == substitution.playerOutId,
+      );
+      final incoming = trackedTeam.players.firstWhere(
+        (player) => player.id == substitution.playerInId,
+      );
+      return ListTile(
+        dense: true,
+        leading: const CircleAvatar(child: Icon(Icons.swap_horiz, size: 18)),
+        title: Text('#${incoming.number} in • #${outgoing.number} out'),
+        subtitle: Text(
+          'Set ${substitution.setNumber} • ${substitution.homeScore}-${substitution.awayScore}',
+        ),
+      );
+    }
+    final timeout = event.timeout!;
+    return ListTile(
+      dense: true,
+      leading: const CircleAvatar(child: Icon(Icons.timer_outlined, size: 18)),
+      title: Text('${trackedTeam.shortCode} timeout'),
+      subtitle: Text(
+        'Set ${timeout.setNumber} • ${timeout.homeScore}-${timeout.awayScore}',
       ),
-      Expanded(
-        child: log.rallies.isEmpty
-            ? const Center(child: Text('The first rally will appear here.'))
-            : ListView.builder(
-                reverse: true,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                itemCount: log.rallies.length,
-                itemBuilder: (context, reverseIndex) {
-                  final rally =
-                      log.rallies[log.rallies.length - 1 - reverseIndex];
-                  final winner = rally.winnerTeamId == home.id ? home : away;
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      radius: 17,
-                      child: Text(
-                        '${rally.sequence}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                    title: Text(
-                      '${winner.shortCode} point  •  ${rally.homeScore}-${rally.awayScore}',
-                    ),
-                    subtitle: Text(
-                      'Set ${rally.setNumber}${rally.actions.isEmpty ? '' : ' • ${rally.actions.map((a) => a.skill.name).join(', ')}'}',
-                    ),
-                  );
-                },
-              ),
-      ),
-    ],
-  );
+    );
+  }
+}
+
+class _TimelineEvent {
+  const _TimelineEvent._({
+    required this.recordedAt,
+    this.rally,
+    this.substitution,
+    this.timeout,
+  });
+
+  factory _TimelineEvent.rally(Rally rally) =>
+      _TimelineEvent._(recordedAt: rally.recordedAt, rally: rally);
+  factory _TimelineEvent.substitution(Substitution substitution) =>
+      _TimelineEvent._(
+        recordedAt: substitution.recordedAt,
+        substitution: substitution,
+      );
+  factory _TimelineEvent.timeout(TeamTimeout timeout) =>
+      _TimelineEvent._(recordedAt: timeout.recordedAt, timeout: timeout);
+
+  final DateTime recordedAt;
+  final Rally? rally;
+  final Substitution? substitution;
+  final TeamTimeout? timeout;
 }
 
 extension _FirstOrNull<T> on Iterable<T> {

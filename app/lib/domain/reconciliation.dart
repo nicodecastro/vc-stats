@@ -141,6 +141,14 @@ class ReconciliationService {
       updatedAt: now,
       initialServingTeamId: result.primary.initialServingTeamId,
       lineups: [...result.primary.lineups, ...result.imported.lineups],
+      substitutions: {
+        for (final item in result.primary.substitutions) item.id: item,
+        for (final item in result.imported.substitutions) item.id: item,
+      }.values.toList(),
+      timeouts: {
+        for (final item in result.primary.timeouts) item.id: item,
+        for (final item in result.imported.timeouts) item.id: item,
+      }.values.toList(),
       rallies: merged,
       corrections: [
         ...result.primary.corrections,

@@ -5,6 +5,9 @@ import 'package:vc_sets/application/providers.dart';
 import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/presentation/app.dart';
+import 'package:vc_sets/presentation/pages/tracker_page.dart';
+
+import 'test_fixtures.dart';
 
 void main() {
   testWidgets('dashboard renders at phone and desktop widths', (tester) async {
@@ -27,5 +30,71 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1200, 800));
     await tester.pumpAndSettle();
     expect(find.byType(NavigationRail), findsOneWidget);
+  });
+
+  testWidgets('tracker renders R-5 court player buttons and team controls', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 10, 2);
+    final log = ScorerLog(
+      id: 'log',
+      gameId: 'game',
+      assignedTeamId: homeTeam.id,
+      deviceId: 'test-device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+      lineups: [
+        LineupSnapshot(
+          teamId: homeTeam.id,
+          playerIds: homeTeam.players
+              .take(6)
+              .map((player) => player.id)
+              .toList(),
+          recordedAt: now,
+        ),
+      ],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.inProgress,
+      logs: [log],
+    );
+    final tournament = Tournament(
+      id: 'tournament',
+      name: 'League',
+      venue: 'Gym',
+      startsOn: now,
+      endsOn: now,
+      createdAt: now,
+      teams: [homeTeam, awayTeam],
+      games: [game],
+    );
+    final data = AppData(deviceId: 'test-device', tournaments: [tournament]);
+    final repository = MemoryAppRepository(data);
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: const MaterialApp(
+          home: TrackerPage(tournamentId: 'tournament', gameId: 'game'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('NET • FRONT ROW'), findsOneWidget);
+    expect(find.text('R-5 lineup • Set 1'), findsOneWidget);
+    expect(find.text('Substitution (0)'), findsOneWidget);
+    expect(find.text('Timeout (0/2)'), findsOneWidget);
+    expect(find.text('#1'), findsWidgets);
   });
 }

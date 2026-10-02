@@ -102,4 +102,60 @@ void main() {
     expect(restored.games.single.bracketType, BracketGameType.thirdPlace);
     expect(restored.games.single.rulesSnapshot?.maxSets, 3);
   });
+
+  test('game package preserves lineup, substitution, and timeout events', () {
+    final now = DateTime.utc(2026, 10, 2);
+    final log = ScorerLog(
+      id: 'event-log',
+      gameId: 'game',
+      assignedTeamId: homeTeam.id,
+      deviceId: 'device-a',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+      lineups: [
+        LineupSnapshot(
+          teamId: homeTeam.id,
+          playerIds: homeTeam.players.map((player) => player.id).toList(),
+          recordedAt: now,
+        ),
+      ],
+      substitutions: [
+        Substitution(
+          id: 'sub-1',
+          teamId: homeTeam.id,
+          setNumber: 1,
+          playerOutId: homeTeam.players.first.id,
+          playerInId: 'bench',
+          homeScore: 4,
+          awayScore: 3,
+          recordedAt: now,
+        ),
+      ],
+      timeouts: [
+        TeamTimeout(
+          id: 'timeout-1',
+          teamId: homeTeam.id,
+          setNumber: 1,
+          homeScore: 8,
+          awayScore: 9,
+          recordedAt: now,
+        ),
+      ],
+    );
+    final game = testGame(logs: [log]);
+    final package = service.createGamePackage(
+      packageId: 'events-package',
+      deviceId: 'device-a',
+      exportedAt: now,
+      tournament: testTournament(games: [game]),
+      game: game,
+      log: log,
+    );
+
+    final decoded = service.decodeGamePackage(package.encode()).log!;
+    expect(decoded.lineups.single.setNumber, 1);
+    expect(decoded.substitutions.single.playerInId, 'bench');
+    expect(decoded.timeouts.single.homeScore, 8);
+  });
 }

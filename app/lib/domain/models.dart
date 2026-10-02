@@ -364,23 +364,113 @@ class LineupSnapshot {
   const LineupSnapshot({
     required this.teamId,
     required this.playerIds,
+    this.setNumber = 1,
     this.rotation = 1,
+    this.recordedAt,
   });
 
   final String teamId;
   final List<String> playerIds;
+  final int setNumber;
   final int rotation;
+  final DateTime? recordedAt;
 
   Map<String, Object?> toJson() => {
     'teamId': teamId,
     'playerIds': playerIds,
+    'setNumber': setNumber,
     'rotation': rotation,
+    'recordedAt': recordedAt?.toUtc().toIso8601String(),
   };
 
   factory LineupSnapshot.fromJson(Map<String, Object?> json) => LineupSnapshot(
     teamId: json['teamId']! as String,
     playerIds: (json['playerIds'] as List<Object?>).cast<String>(),
+    setNumber: (json['setNumber'] as num?)?.toInt() ?? 1,
     rotation: (json['rotation'] as num?)?.toInt() ?? 1,
+    recordedAt: json['recordedAt'] == null
+        ? null
+        : DateTime.parse(json['recordedAt']! as String),
+  );
+}
+
+class Substitution {
+  const Substitution({
+    required this.id,
+    required this.teamId,
+    required this.setNumber,
+    required this.playerOutId,
+    required this.playerInId,
+    required this.homeScore,
+    required this.awayScore,
+    required this.recordedAt,
+  });
+
+  final String id;
+  final String teamId;
+  final int setNumber;
+  final String playerOutId;
+  final String playerInId;
+  final int homeScore;
+  final int awayScore;
+  final DateTime recordedAt;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'teamId': teamId,
+    'setNumber': setNumber,
+    'playerOutId': playerOutId,
+    'playerInId': playerInId,
+    'homeScore': homeScore,
+    'awayScore': awayScore,
+    'recordedAt': recordedAt.toUtc().toIso8601String(),
+  };
+
+  factory Substitution.fromJson(Map<String, Object?> json) => Substitution(
+    id: json['id']! as String,
+    teamId: json['teamId']! as String,
+    setNumber: (json['setNumber'] as num).toInt(),
+    playerOutId: json['playerOutId']! as String,
+    playerInId: json['playerInId']! as String,
+    homeScore: (json['homeScore'] as num?)?.toInt() ?? 0,
+    awayScore: (json['awayScore'] as num?)?.toInt() ?? 0,
+    recordedAt: DateTime.parse(json['recordedAt']! as String),
+  );
+}
+
+class TeamTimeout {
+  const TeamTimeout({
+    required this.id,
+    required this.teamId,
+    required this.setNumber,
+    required this.homeScore,
+    required this.awayScore,
+    required this.recordedAt,
+  });
+
+  final String id;
+  final String teamId;
+  final int setNumber;
+  final int homeScore;
+  final int awayScore;
+  final DateTime recordedAt;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'teamId': teamId,
+    'setNumber': setNumber,
+    'homeScore': homeScore,
+    'awayScore': awayScore,
+    'recordedAt': recordedAt.toUtc().toIso8601String(),
+  };
+
+  factory TeamTimeout.fromJson(Map<String, Object?> json) => TeamTimeout(
+    id: json['id']! as String,
+    teamId: json['teamId']! as String,
+    setNumber: (json['setNumber'] as num).toInt(),
+    homeScore: (json['homeScore'] as num?)?.toInt() ?? 0,
+    awayScore: (json['awayScore'] as num?)?.toInt() ?? 0,
+    recordedAt: DateTime.parse(json['recordedAt']! as String),
   );
 }
 
@@ -394,6 +484,8 @@ class ScorerLog {
     required this.updatedAt,
     required this.initialServingTeamId,
     this.lineups = const [],
+    this.substitutions = const [],
+    this.timeouts = const [],
     this.rallies = const [],
     this.corrections = const [],
   });
@@ -406,6 +498,8 @@ class ScorerLog {
   final DateTime updatedAt;
   final String initialServingTeamId;
   final List<LineupSnapshot> lineups;
+  final List<Substitution> substitutions;
+  final List<TeamTimeout> timeouts;
   final List<Rally> rallies;
   final List<Correction> corrections;
 
@@ -414,6 +508,8 @@ class ScorerLog {
     List<Rally>? rallies,
     List<Correction>? corrections,
     List<LineupSnapshot>? lineups,
+    List<Substitution>? substitutions,
+    List<TeamTimeout>? timeouts,
   }) => ScorerLog(
     id: id,
     gameId: gameId,
@@ -423,6 +519,8 @@ class ScorerLog {
     updatedAt: updatedAt ?? this.updatedAt,
     initialServingTeamId: initialServingTeamId,
     lineups: lineups ?? this.lineups,
+    substitutions: substitutions ?? this.substitutions,
+    timeouts: timeouts ?? this.timeouts,
     rallies: rallies ?? this.rallies,
     corrections: corrections ?? this.corrections,
   );
@@ -436,6 +534,8 @@ class ScorerLog {
     'updatedAt': updatedAt.toUtc().toIso8601String(),
     'initialServingTeamId': initialServingTeamId,
     'lineups': lineups.map((lineup) => lineup.toJson()).toList(),
+    'substitutions': substitutions.map((item) => item.toJson()).toList(),
+    'timeouts': timeouts.map((item) => item.toJson()).toList(),
     'rallies': rallies.map((rally) => rally.toJson()).toList(),
     'corrections': corrections.map((item) => item.toJson()).toList(),
   };
@@ -454,6 +554,17 @@ class ScorerLog {
               LineupSnapshot.fromJson((item as Map).cast<String, Object?>()),
         )
         .toList(),
+    substitutions: (json['substitutions'] as List<Object?>? ?? const [])
+        .map(
+          (item) =>
+              Substitution.fromJson((item as Map).cast<String, Object?>()),
+        )
+        .toList(),
+    timeouts: (json['timeouts'] as List<Object?>? ?? const [])
+        .map(
+          (item) => TeamTimeout.fromJson((item as Map).cast<String, Object?>()),
+        )
+        .toList(),
     rallies: (json['rallies'] as List<Object?>? ?? const [])
         .map((item) => Rally.fromJson((item as Map).cast<String, Object?>()))
         .toList(),
@@ -463,6 +574,45 @@ class ScorerLog {
         )
         .toList(),
   );
+
+  LineupSnapshot? lineupFor(String teamId, int setNumber) {
+    final candidates = lineups
+        .where(
+          (lineup) => lineup.teamId == teamId && lineup.setNumber <= setNumber,
+        )
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) {
+      final setComparison = a.setNumber.compareTo(b.setNumber);
+      if (setComparison != 0) return setComparison;
+      final aTime = a.recordedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final bTime = b.recordedAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return aTime.compareTo(bTime);
+    });
+    return candidates.last;
+  }
+
+  List<String> serviceOrderFor(String teamId, int setNumber) {
+    final lineup = lineupFor(teamId, setNumber);
+    if (lineup == null) return const [];
+    final players = [...lineup.playerIds];
+    for (final substitution in substitutions.where(
+      (item) => item.teamId == teamId && item.setNumber == setNumber,
+    )) {
+      final index = players.indexOf(substitution.playerOutId);
+      if (index >= 0) players[index] = substitution.playerInId;
+    }
+    return players;
+  }
+
+  List<String> courtOrderFor(String teamId, int setNumber, int rotation) {
+    final serviceOrder = serviceOrderFor(teamId, setNumber);
+    if (serviceOrder.length != 6) return serviceOrder;
+    return [
+      for (var position = 1; position <= 6; position++)
+        serviceOrder[(position + rotation - 2) % 6],
+    ];
+  }
 }
 
 class FinalizationRevision {
@@ -853,7 +1003,7 @@ class AppData {
   );
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 2,
+    'schemaVersion': 3,
     'deviceId': deviceId,
     'tournaments': tournaments.map((item) => item.toJson()).toList(),
     'importedPackageIds': importedPackageIds,
