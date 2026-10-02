@@ -96,5 +96,22 @@ void main() {
     expect(find.text('Substitution (0)'), findsOneWidget);
     expect(find.text('Timeout (0/2)'), findsOneWidget);
     expect(find.text('#1'), findsWidgets);
+    expect(find.text('ATT'), findsNWidgets(6));
+    expect(find.text('EXC'), findsNWidgets(6));
+    expect(find.text('ERR'), findsNWidgets(6));
+    expect(find.text('OPP ERR  •  OP+'), findsOneWidget);
+    expect(find.text('TEAM FAULT  •  T-'), findsOneWidget);
+
+    await tester.tap(find.text('EXC').first);
+    await tester.ensureVisible(find.text('OPP ERR  •  OP+'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OPP ERR  •  OP+'));
+    await tester.ensureVisible(find.text('TEAM FAULT  •  T-'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('TEAM FAULT  •  T-'));
+    await tester.pump();
+    expect(find.text('V1+'), findsOneWidget);
+    expect(find.text('OP+'), findsOneWidget);
+    expect(find.text('T-'), findsOneWidget);
   });
 }

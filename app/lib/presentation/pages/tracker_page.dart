@@ -390,17 +390,18 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
 
   void _addAction(Skill skill, ActionGrade grade, TournamentTeam team) {
-    if (skill != Skill.timeout &&
+    final requiresPlayer =
+        skill != Skill.timeout &&
         skill != Skill.substitution &&
-        selectedPlayerId == null) {
-      return;
-    }
+        skill != Skill.opponentError &&
+        skill != Skill.teamFault;
+    if (requiresPlayer && selectedPlayerId == null) return;
     setState(
       () => pending.add(
         TeamAction(
           id: const Uuid().v4(),
           teamId: team.id,
-          playerId: skill == Skill.timeout ? null : selectedPlayerId,
+          playerId: requiresPlayer ? selectedPlayerId : null,
           skill: skill,
           grade: grade,
           recordedAt: DateTime.now(),
@@ -798,29 +799,26 @@ class _EntryPanel extends StatelessWidget {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
+          _SkillActionGrid(
+            enabled: selectedPlayerId != null,
+            onAdd: (skill, grade) => onAdd(skill, grade, team),
+          ),
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final skill in [
-                Skill.serve,
-                Skill.reception,
-                Skill.set,
-                Skill.attack,
-                Skill.block,
-                Skill.dig,
-              ])
-                FilledButton.tonal(
-                  onPressed: selectedPlayerId == null
-                      ? null
-                      : () => onAdd(skill, ActionGrade.success, team),
-                  child: Text('${skill.name} +'),
-                ),
-              OutlinedButton(
-                onPressed: selectedPlayerId == null
-                    ? null
-                    : () => onAdd(Skill.error, ActionGrade.error, team),
-                child: const Text('Error'),
+              FilledButton.tonalIcon(
+                onPressed: () =>
+                    onAdd(Skill.opponentError, ActionGrade.success, team),
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('OPP ERR  •  OP+'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    onAdd(Skill.teamFault, ActionGrade.error, team),
+                icon: const Icon(Icons.remove_circle_outline),
+                label: const Text('TEAM FAULT  •  T-'),
               ),
             ],
           ),
@@ -832,9 +830,7 @@ class _EntryPanel extends StatelessWidget {
               children: pending
                   .map(
                     (action) => InputChip(
-                      label: Text(
-                        '${action.skill.name} ${action.grade == ActionGrade.success ? '+' : ''}',
-                      ),
+                      label: Text(action.notation(team)),
                       onDeleted: () => onRemove(action),
                     ),
                   )
@@ -854,6 +850,72 @@ class _EntryPanel extends StatelessWidget {
         ? 'Unknown player'
         : '#${player.number} ${player.name}';
   }
+}
+
+class _SkillActionGrid extends StatelessWidget {
+  const _SkillActionGrid({required this.enabled, required this.onAdd});
+
+  final bool enabled;
+  final void Function(Skill skill, ActionGrade grade) onAdd;
+
+  static const skills = [
+    (label: 'SERVICE', code: 'V', skill: Skill.serve),
+    (label: 'ATTACK', code: 'A', skill: Skill.attack),
+    (label: 'BLOCK', code: 'B', skill: Skill.block),
+    (label: 'SET', code: 'V', skill: Skill.set),
+    (label: 'RECEPTION', code: 'R', skill: Skill.reception),
+    (label: 'DIG', code: 'D', skill: Skill.dig),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      for (final item in skills)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 7),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 112,
+                child: Text(
+                  '${item.label} (${item.code})',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: enabled
+                      ? () => onAdd(item.skill, ActionGrade.attempt)
+                      : null,
+                  child: const Text('ATT'),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: FilledButton.tonal(
+                  onPressed: enabled
+                      ? () => onAdd(item.skill, ActionGrade.success)
+                      : null,
+                  child: const Text('EXC'),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: enabled
+                      ? () => onAdd(item.skill, ActionGrade.error)
+                      : null,
+                  child: const Text('ERR'),
+                ),
+              ),
+            ],
+          ),
+        ),
+    ],
+  );
 }
 
 class _HalfCourt extends StatelessWidget {
@@ -1045,7 +1107,7 @@ class _Timeline extends StatelessWidget {
           '${winner.shortCode} point  •  ${rally.homeScore}-${rally.awayScore}',
         ),
         subtitle: Text(
-          'Set ${rally.setNumber}${rally.actions.isEmpty ? '' : ' • ${rally.actions.map((a) => a.skill.name).join(', ')}'}',
+          'Set ${rally.setNumber}${rally.actions.isEmpty ? '' : ' • ${rally.actions.map((action) => action.notation(trackedTeam)).join('  ')}'}',
         ),
       );
     }

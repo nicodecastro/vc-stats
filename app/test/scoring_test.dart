@@ -90,4 +90,31 @@ void main() {
       hasLength(greaterThanOrEqualTo(2)),
     );
   });
+
+  test('skill actions use the requested compact rally notation', () {
+    final now = DateTime.utc(2026, 10, 2);
+    String notation(Skill skill, ActionGrade grade, {bool player = true}) =>
+        TeamAction(
+          id: '${skill.name}-${grade.name}',
+          teamId: homeTeam.id,
+          playerId: player ? homeTeam.players.first.id : null,
+          skill: skill,
+          grade: grade,
+          recordedAt: now,
+        ).notation(homeTeam);
+
+    expect(notation(Skill.serve, ActionGrade.attempt), 'V1');
+    expect(notation(Skill.serve, ActionGrade.success), 'V1+');
+    expect(notation(Skill.serve, ActionGrade.error), 'V1-');
+    expect(notation(Skill.attack, ActionGrade.attempt), 'A1');
+    expect(notation(Skill.block, ActionGrade.error), 'B1-');
+    expect(notation(Skill.set, ActionGrade.success), 'V1+');
+    expect(notation(Skill.reception, ActionGrade.attempt), 'R1');
+    expect(notation(Skill.dig, ActionGrade.success), 'D1+');
+    expect(
+      notation(Skill.opponentError, ActionGrade.success, player: false),
+      'OP+',
+    );
+    expect(notation(Skill.teamFault, ActionGrade.error, player: false), 'T-');
+  });
 }

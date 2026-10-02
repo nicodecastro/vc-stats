@@ -78,7 +78,11 @@ class StatisticsService {
           final playerActions = byPlayer[player.id] ?? const <TeamAction>[];
           final skills = <Skill, SkillSummary>{};
           for (final skill in Skill.values.where(
-            (item) => item != Skill.timeout && item != Skill.substitution,
+            (item) =>
+                item != Skill.timeout &&
+                item != Skill.substitution &&
+                item != Skill.opponentError &&
+                item != Skill.teamFault,
           )) {
             final relevant = playerActions
                 .where((action) => action.skill == skill)

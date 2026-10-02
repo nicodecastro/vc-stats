@@ -22,6 +22,8 @@ enum Skill {
   error,
   substitution,
   timeout,
+  opponentError,
+  teamFault,
 }
 
 enum ActionGrade { success, positive, neutral, error, attempt }
@@ -234,6 +236,34 @@ class TeamAction {
   final DateTime recordedAt;
   final String? note;
   final Map<String, Object?> metadata;
+
+  String notation(TournamentTeam team) {
+    if (skill == Skill.opponentError) return 'OP+';
+    if (skill == Skill.teamFault) return 'T-';
+    final code = switch (skill) {
+      Skill.serve => 'V',
+      Skill.attack => 'A',
+      Skill.block => 'B',
+      Skill.set => 'V',
+      Skill.reception => 'R',
+      Skill.dig => 'D',
+      Skill.error => 'E',
+      Skill.substitution => 'SUB',
+      Skill.timeout => 'TO',
+      Skill.opponentError => 'OP',
+      Skill.teamFault => 'T',
+    };
+    final player = playerId == null
+        ? null
+        : team.players.where((item) => item.id == playerId).firstOrNull;
+    final number = player == null ? '' : '${player.number}';
+    final suffix = switch (grade) {
+      ActionGrade.success || ActionGrade.positive => '+',
+      ActionGrade.error => '-',
+      ActionGrade.neutral || ActionGrade.attempt => '',
+    };
+    return '$code$number$suffix';
+  }
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -1003,7 +1033,7 @@ class AppData {
   );
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 3,
+    'schemaVersion': 4,
     'deviceId': deviceId,
     'tournaments': tournaments.map((item) => item.toJson()).toList(),
     'importedPackageIds': importedPackageIds,
