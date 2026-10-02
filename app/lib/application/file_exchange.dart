@@ -33,10 +33,11 @@ class FileExchangeService {
   }
 
   Future<GamePackage?> pickGamePackage() async {
+    // iOS Files disables unknown custom extensions when an accept filter is
+    // present. Allow selection first; package decoding validates type/hash.
     final file = await FilePicker.pickFile(
       dialogTitle: 'Import VC SETS game package',
-      type: FileType.custom,
-      allowedExtensions: ['vcgame', 'json'],
+      type: FileType.any,
     );
     if (file == null) return null;
     final bytes = await file.readAsBytes();
@@ -57,10 +58,11 @@ class FileExchangeService {
   }
 
   Future<AppData?> pickBackup() async {
+    // See pickGamePackage: content validation is more portable than an OS
+    // extension filter for .vcbackup files.
     final file = await FilePicker.pickFile(
       dialogTitle: 'Restore VC SETS backup',
-      type: FileType.custom,
-      allowedExtensions: ['vcbackup', 'json'],
+      type: FileType.any,
     );
     if (file == null) return null;
     final bytes = await file.readAsBytes();
