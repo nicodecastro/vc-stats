@@ -103,6 +103,14 @@ void main() {
     expect(find.text('OPP ERR  •  OP+'), findsOneWidget);
     expect(find.text('TEAM FAULT  •  T-'), findsOneWidget);
 
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    await tester.pumpAndSettle();
+    final scoreboard = tester.getTopLeft(find.text('SET 1'));
+    final timeline = tester.getTopLeft(find.text('Event timeline'));
+    final playerActions = tester.getTopLeft(find.text('Player actions'));
+    expect(scoreboard.dy, lessThan(timeline.dy));
+    expect(playerActions.dy, lessThan(160));
+
     await tester.tap(find.text('ATT').first);
     await tester.pump();
     expect(find.text('V1'), findsOneWidget);

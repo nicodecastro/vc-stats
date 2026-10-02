@@ -150,25 +150,32 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                     flex: 5,
                     child: ListView(
                       padding: const EdgeInsets.all(18),
-                      children: [
-                        scorePanel,
-                        const SizedBox(height: 16),
-                        entryPanel,
-                      ],
+                      children: [entryPanel],
                     ),
                   ),
                   const VerticalDivider(width: 1),
-                  Expanded(flex: 3, child: timeline),
+                  Expanded(
+                    flex: 3,
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                          child: scorePanel,
+                        ),
+                        Expanded(child: timeline),
+                      ],
+                    ),
+                  ),
                 ],
               );
             }
             return ListView(
               padding: const EdgeInsets.all(14),
               children: [
-                scorePanel,
-                const SizedBox(height: 14),
                 entryPanel,
                 const SizedBox(height: 14),
+                scorePanel,
+                const SizedBox(height: 6),
                 SizedBox(height: 420, child: timeline),
               ],
             );
@@ -599,7 +606,7 @@ class _ScorePanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(12),
       child: Column(
         children: [
           Row(
@@ -612,11 +619,14 @@ class _ScorePanel extends StatelessWidget {
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
-              const SizedBox(width: 16),
-              Text('Sets ${score.homeSets} – ${score.awaySets}'),
+              const SizedBox(width: 10),
+              Text(
+                'Sets ${score.homeSets} – ${score.awaySets}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -629,10 +639,10 @@ class _ScorePanel extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
                   '–',
-                  style: Theme.of(context).textTheme.displaySmall,
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
               ),
               Expanded(
@@ -646,10 +656,10 @@ class _ScorePanel extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 6),
           const Text(
             'Tap a team panel to award the next rally',
-            style: TextStyle(color: Colors.black54),
+            style: TextStyle(color: Colors.black54, fontSize: 12),
           ),
         ],
       ),
@@ -678,7 +688,7 @@ class _TeamScore extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
         child: Column(
           children: [
             Row(
@@ -697,10 +707,13 @@ class _TeamScore extends StatelessWidget {
             ),
             Text(
               '$points',
-              style: Theme.of(context).textTheme.displayLarge
+              style: Theme.of(context).textTheme.displaySmall
                   ?.copyWith(fontWeight: FontWeight.w900),
             ),
-            Text('Rotation $rotation'),
+            Text(
+              'Rotation $rotation',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ),
       ),
