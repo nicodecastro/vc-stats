@@ -396,18 +396,20 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         skill != Skill.opponentError &&
         skill != Skill.teamFault;
     if (requiresPlayer && selectedPlayerId == null) return;
-    setState(
-      () => pending.add(
-        TeamAction(
-          id: const Uuid().v4(),
-          teamId: team.id,
-          playerId: requiresPlayer ? selectedPlayerId : null,
-          skill: skill,
-          grade: grade,
-          recordedAt: DateTime.now(),
-        ),
-      ),
+    final next = TeamAction(
+      id: const Uuid().v4(),
+      teamId: team.id,
+      playerId: requiresPlayer ? selectedPlayerId : null,
+      skill: skill,
+      grade: grade,
+      recordedAt: DateTime.now(),
     );
+    final composed = const RallyActionComposer().add(pending, next);
+    setState(() {
+      pending
+        ..clear()
+        ..addAll(composed);
+    });
   }
 
   Future<void> _award(String teamId) async {

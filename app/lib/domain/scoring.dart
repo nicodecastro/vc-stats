@@ -1,5 +1,27 @@
 import 'models.dart';
 
+class RallyActionComposer {
+  const RallyActionComposer();
+
+  List<TeamAction> add(List<TeamAction> pending, TeamAction next) {
+    if (next.grade != ActionGrade.attempt && pending.isNotEmpty) {
+      final previous = pending.last;
+      final gradesPreviousAttempt =
+          previous.grade == ActionGrade.attempt &&
+          previous.teamId == next.teamId &&
+          previous.playerId == next.playerId &&
+          previous.skill == next.skill;
+      if (gradesPreviousAttempt) {
+        return [
+          ...pending.take(pending.length - 1),
+          previous.copyWith(grade: next.grade),
+        ];
+      }
+    }
+    return [...pending, next];
+  }
+}
+
 class MatchScore {
   const MatchScore({
     required this.setNumber,

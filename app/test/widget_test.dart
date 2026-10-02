@@ -103,7 +103,19 @@ void main() {
     expect(find.text('OPP ERR  •  OP+'), findsOneWidget);
     expect(find.text('TEAM FAULT  •  T-'), findsOneWidget);
 
+    await tester.tap(find.text('ATT').first);
+    await tester.pump();
+    expect(find.text('V1'), findsOneWidget);
+
     await tester.tap(find.text('EXC').first);
+    await tester.pump();
+    expect(find.text('V1'), findsNothing);
+    expect(find.text('V1+'), findsOneWidget);
+
+    await tester.tap(find.text('EXC').first);
+    await tester.pump();
+    expect(find.text('V1+'), findsNWidgets(2));
+
     await tester.ensureVisible(find.text('OPP ERR  •  OP+'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OPP ERR  •  OP+'));
@@ -111,7 +123,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('TEAM FAULT  •  T-'));
     await tester.pump();
-    expect(find.text('V1+'), findsOneWidget);
+    expect(find.text('V1+'), findsNWidgets(2));
     expect(find.text('OP+'), findsOneWidget);
     expect(find.text('T-'), findsOneWidget);
   });

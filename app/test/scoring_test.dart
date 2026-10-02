@@ -117,4 +117,73 @@ void main() {
     );
     expect(notation(Skill.teamFault, ActionGrade.error, player: false), 'T-');
   });
+
+  test('EXC and ERR grade the immediately preceding matching ATT', () {
+    const composer = RallyActionComposer();
+    final attemptedAt = DateTime.utc(2026, 10, 2, 9);
+    final attempt = TeamAction(
+      id: 'attempt-id',
+      teamId: homeTeam.id,
+      playerId: homeTeam.players.first.id,
+      skill: Skill.serve,
+      grade: ActionGrade.attempt,
+      recordedAt: attemptedAt,
+    );
+    final excellent = TeamAction(
+      id: 'unused-excellent-id',
+      teamId: homeTeam.id,
+      playerId: homeTeam.players.first.id,
+      skill: Skill.serve,
+      grade: ActionGrade.success,
+      recordedAt: attemptedAt.add(const Duration(seconds: 1)),
+    );
+
+    final upgraded = composer.add([attempt], excellent);
+
+    expect(upgraded, hasLength(1));
+    expect(upgraded.single.id, 'attempt-id');
+    expect(upgraded.single.recordedAt, attemptedAt);
+    expect(upgraded.single.grade, ActionGrade.success);
+    expect(upgraded.single.notation(homeTeam), 'V1+');
+
+    final error = excellent.copyWith(grade: ActionGrade.error);
+    final downgraded = composer.add([attempt], error);
+    expect(downgraded, hasLength(1));
+    expect(downgraded.single.id, 'attempt-id');
+    expect(downgraded.single.notation(homeTeam), 'V1-');
+  });
+
+  test('direct grades and nonmatching grades remain separate actions', () {
+    const composer = RallyActionComposer();
+    final now = DateTime.utc(2026, 10, 2, 9);
+    TeamAction action(
+      String id,
+      Skill skill,
+      ActionGrade grade, {
+      String? playerId,
+    }) => TeamAction(
+      id: id,
+      teamId: homeTeam.id,
+      playerId: playerId ?? homeTeam.players.first.id,
+      skill: skill,
+      grade: grade,
+      recordedAt: now,
+    );
+
+    final direct = composer.add(
+      const [],
+      action('direct', Skill.attack, ActionGrade.success),
+    );
+    expect(direct, hasLength(1));
+    expect(direct.single.notation(homeTeam), 'A1+');
+
+    final attempt = action('attempt', Skill.serve, ActionGrade.attempt);
+    final otherSkill = action('dig', Skill.dig, ActionGrade.success);
+    final separate = composer.add([attempt], otherSkill);
+    expect(separate, hasLength(2));
+    expect(
+      separate.map((item) => item.notation(homeTeam)),
+      orderedEquals(['V1', 'D1+']),
+    );
+  });
 }

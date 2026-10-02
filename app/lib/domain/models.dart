@@ -237,6 +237,17 @@ class TeamAction {
   final String? note;
   final Map<String, Object?> metadata;
 
+  TeamAction copyWith({ActionGrade? grade}) => TeamAction(
+    id: id,
+    teamId: teamId,
+    playerId: playerId,
+    skill: skill,
+    grade: grade ?? this.grade,
+    recordedAt: recordedAt,
+    note: note,
+    metadata: metadata,
+  );
+
   String notation(TournamentTeam team) {
     if (skill == Skill.opponentError) return 'OP+';
     if (skill == Skill.teamFault) return 'T-';
