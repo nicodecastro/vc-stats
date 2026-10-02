@@ -96,23 +96,24 @@ class FileExchangeService {
   }
 
   Future<void> exportPlayersCsv(Tournament tournament) async {
-    final rows = const StatisticsService().playerSummaries(tournament);
-    final buffer = StringBuffer(
-      'Player,Number,Skill,Attempts,Successes,Positive,Errors,Success rate\r\n',
-    );
-    for (final row in rows) {
-      for (final entry in row.bySkill.entries) {
-        if (entry.value.attempts == 0) continue;
-        buffer.writeln(
-          '${_csv(row.player.name)},${row.player.number},${entry.key.name},${entry.value.attempts},${entry.value.successes},${entry.value.positive},${entry.value.errors},${(entry.value.successRate * 100).toStringAsFixed(1)}%',
-        );
-      }
-    }
     await _save(
-      '${_safe(tournament.name)}-players.csv',
-      buffer.toString(),
+      '${_safe(tournament.name)}-player-stats.csv',
+      playerStatsCsv(tournament),
       mime: 'text/csv',
     );
+  }
+
+  String playerStatsCsv(Tournament tournament) {
+    final rows = const StatisticsService().playerStatsSummary(tournament);
+    final buffer = StringBuffer(
+      'Team,Last name,Number,${playerStatColumns.join(',')}\r\n',
+    );
+    for (final row in rows) {
+      buffer.writeln(
+        '${_csv(row.team.name)},${_csv(row.lastName)},${row.player.number},${playerStatColumns.map((column) => row.counts[column] ?? 0).join(',')}',
+      );
+    }
+    return buffer.toString();
   }
 
   Future<void> exportPrintableHtml(Tournament tournament) async {
@@ -129,19 +130,33 @@ class FileExchangeService {
 ${[for (var i = 0; i < standings.length; i++) '<tr><td>${i + 1}</td><td>${_html(standings[i].team.name)}</td><td>${standings[i].played}</td><td>${standings[i].wins}</td><td>${standings[i].losses}</td><td>${standings[i].matchPoints}</td><td>${standings[i].setsWon}-${standings[i].setsLost}</td><td>${standings[i].pointsWon}-${standings[i].pointsLost}</td></tr>'].join()}
 </tbody></table>''';
     }).join();
-    final players = const StatisticsService().playerSummaries(tournament);
+    final playerStats = const StatisticsService().playerStatsSummary(
+      tournament,
+    );
+    final playerHeader = [
+      'Team',
+      'Last name',
+      '#',
+      ...playerStatColumns,
+    ].map((column) => '<th>${_html(column)}</th>').join();
+    final playerRows = playerStats
+        .map(
+          (row) =>
+              '<tr><td>${_html(row.team.name)}</td><td>${_html(row.lastName)}</td><td>${row.player.number}</td>${playerStatColumns.map((column) => '<td>${row.counts[column] ?? 0}</td>').join()}</tr>',
+        )
+        .join();
     final html =
         '''<!doctype html>
 <html><head><meta charset="utf-8"><title>${_html(tournament.name)} report</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:32px;color:#17332f}h1{margin-bottom:4px}h2{margin-top:32px}
 table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:8px;border-bottom:1px solid #ccd8d4;text-align:left}
-th{background:#e5f1ed}@media print{body{margin:12mm}.no-print{display:none}}
+th{background:#e5f1ed}.player-stats{font-size:9px}.player-stats th,.player-stats td{padding:4px}@media print{body{margin:8mm}.no-print{display:none}@page{size:landscape}}
 </style></head><body>
 <button class="no-print" onclick="window.print()">Print report</button>
 <h1>${_html(tournament.name)}</h1><div>${_html(tournament.venue)} • Generated ${DateFormat.yMMMd().add_jm().format(DateTime.now())}</div>
-$standingsHtml<h2>Player statistics</h2><table><thead><tr><th>Player</th><th>Skill</th><th>Attempts</th><th>Success</th><th>Errors</th><th>Rate</th></tr></thead><tbody>
-${players.expand((row) => row.bySkill.entries.where((entry) => entry.value.attempts > 0).map((entry) => '<tr><td>#${row.player.number} ${_html(row.player.name)}</td><td>${entry.key.name}</td><td>${entry.value.attempts}</td><td>${entry.value.successes}</td><td>${entry.value.errors}</td><td>${(entry.value.successRate * 100).toStringAsFixed(1)}%</td></tr>')).join()}
+$standingsHtml<h2>Player stats summary</h2><table class="player-stats"><thead><tr>$playerHeader</tr></thead><tbody>
+$playerRows
 </tbody></table></body></html>''';
     await _save(
       '${_safe(tournament.name)}-print-report.html',

@@ -26,6 +26,43 @@ class PlayerSummary {
       bySkill.values.fold(0, (total, item) => total + item.successes);
 }
 
+const playerStatColumns = <String>[
+  'S',
+  'S+',
+  'S-',
+  'V',
+  'V+',
+  'V-',
+  'D',
+  'D+',
+  'D-',
+  'R',
+  'R+',
+  'R-',
+  'A',
+  'A+',
+  'A-',
+  'B',
+  'B+',
+  'B-',
+  'OP+',
+  'T-',
+];
+
+class PlayerStatRow {
+  const PlayerStatRow({
+    required this.team,
+    required this.player,
+    required this.lastName,
+    required this.counts,
+  });
+
+  final TournamentTeam team;
+  final Player player;
+  final String lastName;
+  final Map<String, int> counts;
+}
+
 class StandingRow {
   const StandingRow({
     required this.team,
@@ -57,6 +94,51 @@ class StandingRow {
 
 class StatisticsService {
   const StatisticsService();
+
+  List<PlayerStatRow> playerStatsSummary(Tournament tournament) {
+    final actions = tournament.games
+        .where(
+          (game) =>
+              game.status == GameStatus.finalized && game.officialLog != null,
+        )
+        .expand((game) => game.officialLog!.rallies)
+        .expand((rally) => rally.actions)
+        .toList();
+    final rows = <PlayerStatRow>[];
+    for (final team in tournament.teams) {
+      final teamActions = actions
+          .where((action) => action.teamId == team.id)
+          .toList();
+      final opponentErrors = teamActions
+          .where((action) => action.skill == Skill.opponentError)
+          .length;
+      final teamFaults = teamActions
+          .where((action) => action.skill == Skill.teamFault)
+          .length;
+      for (final player in team.players) {
+        final counts = <String, int>{
+          for (final column in playerStatColumns) column: 0,
+        };
+        for (final action in teamActions.where(
+          (action) => action.playerId == player.id,
+        )) {
+          final column = _playerStatColumn(action);
+          if (column != null) counts[column] = counts[column]! + 1;
+        }
+        counts['OP+'] = opponentErrors;
+        counts['T-'] = teamFaults;
+        rows.add(
+          PlayerStatRow(
+            team: team,
+            player: player,
+            lastName: _lastName(player.name),
+            counts: counts,
+          ),
+        );
+      }
+    }
+    return rows;
+  }
 
   List<PlayerSummary> playerSummaries(Tournament tournament) {
     final actions = tournament.games
@@ -194,6 +276,30 @@ class StatisticsService {
       }
     }
     return (homeSets: homeSets, awaySets: awaySets);
+  }
+
+  String? _playerStatColumn(TeamAction action) {
+    final code = switch (action.skill) {
+      Skill.set => 'S',
+      Skill.serve => 'V',
+      Skill.dig => 'D',
+      Skill.reception => 'R',
+      Skill.attack => 'A',
+      Skill.block => 'B',
+      _ => null,
+    };
+    if (code == null) return null;
+    final suffix = switch (action.grade) {
+      ActionGrade.success || ActionGrade.positive => '+',
+      ActionGrade.error => '-',
+      ActionGrade.attempt || ActionGrade.neutral => '',
+    };
+    return '$code$suffix';
+  }
+
+  String _lastName(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    return parts.isEmpty ? name : parts.last;
   }
 }
 

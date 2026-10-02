@@ -862,7 +862,7 @@ class _SkillActionGrid extends StatelessWidget {
     (label: 'SERVICE', code: 'V', skill: Skill.serve),
     (label: 'ATTACK', code: 'A', skill: Skill.attack),
     (label: 'BLOCK', code: 'B', skill: Skill.block),
-    (label: 'SET', code: 'V', skill: Skill.set),
+    (label: 'SET', code: 'S', skill: Skill.set),
     (label: 'RECEPTION', code: 'R', skill: Skill.reception),
     (label: 'DIG', code: 'D', skill: Skill.dig),
   ];

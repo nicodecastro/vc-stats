@@ -244,7 +244,7 @@ class TeamAction {
       Skill.serve => 'V',
       Skill.attack => 'A',
       Skill.block => 'B',
-      Skill.set => 'V',
+      Skill.set => 'S',
       Skill.reception => 'R',
       Skill.dig => 'D',
       Skill.error => 'E',

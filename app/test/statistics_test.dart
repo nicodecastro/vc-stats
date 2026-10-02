@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vc_sets/application/file_exchange.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/domain/scoring.dart';
 import 'package:vc_sets/domain/statistics.dart';
@@ -105,5 +106,132 @@ void main() {
     expect(standings.first.team.id, homeTeam.id);
     expect(standings.first.wins, 1);
     expect(standings.last.wins, 0);
+  });
+
+  test('player stats matrix buckets notation and repeats team faults', () {
+    const first = Player(
+      id: 'p1',
+      number: 2,
+      name: 'Ana Santos',
+      position: PlayerPosition.S,
+    );
+    const second = Player(
+      id: 'p2',
+      number: 11,
+      name: 'Bea Cruz',
+      position: PlayerPosition.OH,
+    );
+    final team = homeTeam.copyWith(players: [first, second]);
+    final now = DateTime.utc(2026, 10, 2);
+    TeamAction action(
+      String id,
+      Skill skill,
+      ActionGrade grade, {
+      String? playerId = 'p1',
+    }) => TeamAction(
+      id: id,
+      teamId: team.id,
+      playerId: playerId,
+      skill: skill,
+      grade: grade,
+      recordedAt: now,
+    );
+    final log = ScorerLog(
+      id: 'official',
+      gameId: 'game',
+      assignedTeamId: 'official',
+      deviceId: 'device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: team.id,
+      rallies: [
+        Rally(
+          id: 'rally',
+          setNumber: 1,
+          sequence: 1,
+          winnerTeamId: team.id,
+          homeScore: 1,
+          awayScore: 0,
+          homeRotation: 1,
+          awayRotation: 1,
+          servingTeamId: team.id,
+          recordedAt: now,
+          actions: [
+            action('set-att', Skill.set, ActionGrade.attempt),
+            action('set-exc', Skill.set, ActionGrade.success),
+            action('serve-err', Skill.serve, ActionGrade.error),
+            action('dig-exc', Skill.dig, ActionGrade.positive),
+            action(
+              'op-1',
+              Skill.opponentError,
+              ActionGrade.success,
+              playerId: null,
+            ),
+            action(
+              'op-2',
+              Skill.opponentError,
+              ActionGrade.success,
+              playerId: null,
+            ),
+            action('fault', Skill.teamFault, ActionGrade.error, playerId: null),
+          ],
+        ),
+      ],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: team.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.finalized,
+      officialLog: log,
+    );
+    final tournament = testTournament(games: [game])
+        .copyWith(teams: [team, awayTeam]);
+
+    final rows = const StatisticsService().playerStatsSummary(tournament);
+    final ana = rows.firstWhere((row) => row.player.id == first.id);
+    final bea = rows.firstWhere((row) => row.player.id == second.id);
+    expect(playerStatColumns, [
+      'S',
+      'S+',
+      'S-',
+      'V',
+      'V+',
+      'V-',
+      'D',
+      'D+',
+      'D-',
+      'R',
+      'R+',
+      'R-',
+      'A',
+      'A+',
+      'A-',
+      'B',
+      'B+',
+      'B-',
+      'OP+',
+      'T-',
+    ]);
+    expect(ana.lastName, 'Santos');
+    expect(ana.counts['S'], 1);
+    expect(ana.counts['S+'], 1);
+    expect(ana.counts['V-'], 1);
+    expect(ana.counts['D+'], 1);
+    expect(ana.counts['OP+'], 2);
+    expect(ana.counts['T-'], 1);
+    expect(bea.lastName, 'Cruz');
+    expect(bea.counts['S'], 0);
+    expect(bea.counts['OP+'], 2);
+    expect(bea.counts['T-'], 1);
+    final csv = const FileExchangeService().playerStatsCsv(tournament);
+    expect(
+      csv.split('\r\n').first,
+      'Team,Last name,Number,${playerStatColumns.join(',')}',
+    );
+    expect(csv, contains('"${team.name}","Santos",2,'));
   });
 }

@@ -51,7 +51,9 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               ),
           }
         : {1: standings};
-    final players = const StatisticsService().playerSummaries(tournament);
+    final playerStats = const StatisticsService().playerStatsSummary(
+      tournament,
+    );
     return ListView(
       padding: const EdgeInsets.only(bottom: 30),
       children: [
@@ -72,7 +74,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
                 () => const FileExchangeService().exportPlayersCsv(tournament),
               ),
               icon: const Icon(Icons.download),
-              label: const Text('Players CSV'),
+              label: const Text('Player stats CSV'),
             ),
             OutlinedButton.icon(
               onPressed: () => _export(
@@ -122,41 +124,15 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
           ),
         ),
         _ReportSection(
-          title: 'Player leaders',
-          child: players.isEmpty
+          title: 'Player stats summary',
+          child: playerStats.isEmpty
               ? const Padding(
                   padding: EdgeInsets.all(20),
                   child: Text(
-                    'Player statistics appear after a reconciled game is finalized.',
+                    'Add tournament roster players to build the summary.',
                   ),
                 )
-              : Column(
-                  children: players
-                      .take(30)
-                      .map(
-                        (summary) => ListTile(
-                          leading: CircleAvatar(
-                            child: Text('${summary.player.number}'),
-                          ),
-                          title: Text(summary.player.name),
-                          subtitle: Text(
-                            summary.bySkill.entries
-                                .where((entry) => entry.value.attempts > 0)
-                                .map(
-                                  (entry) =>
-                                      '${entry.key.name}: ${entry.value.successes}/${entry.value.attempts}',
-                                )
-                                .join(' • '),
-                          ),
-                          trailing: Text(
-                            '${summary.totalSuccesses}',
-                            style: Theme.of(context).textTheme.titleLarge
-                                ?.copyWith(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
+              : _playerStatsTable(playerStats),
         ),
       ],
     );
@@ -191,6 +167,34 @@ class _ReportsPageState extends ConsumerState<ReportsPage> {
               DataCell(
                 Text('${standings[i].pointsWon}-${standings[i].pointsLost}'),
               ),
+            ],
+          ),
+      ],
+    ),
+  );
+
+  Widget _playerStatsTable(List<PlayerStatRow> rows) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: DataTable(
+      headingRowColor: WidgetStatePropertyAll(
+        Theme.of(context).colorScheme.surfaceContainerHighest,
+      ),
+      columns: [
+        const DataColumn(label: Text('Team')),
+        const DataColumn(label: Text('Last name')),
+        const DataColumn(label: Text('#'), numeric: true),
+        for (final column in playerStatColumns)
+          DataColumn(label: Text(column), numeric: true),
+      ],
+      rows: [
+        for (final row in rows)
+          DataRow(
+            cells: [
+              DataCell(Text(row.team.name)),
+              DataCell(Text(row.lastName)),
+              DataCell(Text('${row.player.number}')),
+              for (final column in playerStatColumns)
+                DataCell(Text('${row.counts[column] ?? 0}')),
             ],
           ),
       ],

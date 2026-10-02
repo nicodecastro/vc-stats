@@ -5,6 +5,7 @@ import 'package:vc_sets/application/providers.dart';
 import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/presentation/app.dart';
+import 'package:vc_sets/presentation/pages/reports_page.dart';
 import 'package:vc_sets/presentation/pages/tracker_page.dart';
 
 import 'test_fixtures.dart';
@@ -111,6 +112,35 @@ void main() {
     await tester.tap(find.text('TEAM FAULT  •  T-'));
     await tester.pump();
     expect(find.text('V1+'), findsOneWidget);
+    expect(find.text('OP+'), findsOneWidget);
+    expect(find.text('T-'), findsOneWidget);
+  });
+
+  testWidgets('reports render the ordered player stats summary matrix', (
+    tester,
+  ) async {
+    final data = AppData(
+      deviceId: 'test-device',
+      tournaments: [testTournament()],
+    );
+    final repository = MemoryAppRepository(data);
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: const MaterialApp(home: Scaffold(body: ReportsPage())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Player stats summary'), findsOneWidget);
+    expect(find.text('Team'), findsWidgets);
+    expect(find.text('Last name'), findsOneWidget);
+    expect(find.text('S+'), findsOneWidget);
+    expect(find.text('V-'), findsOneWidget);
     expect(find.text('OP+'), findsOneWidget);
     expect(find.text('T-'), findsOneWidget);
   });
