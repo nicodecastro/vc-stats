@@ -1,0 +1,7 @@
+.flutter/
+app/.dart_tool/
+app/build/
+app/.flutter-plugins*
+app/android/.gradle/
+app/windows/flutter/ephemeral/
+
