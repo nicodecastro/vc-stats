@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vc_sets/application/providers.dart';
 import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
+import 'package:vc_sets/domain/packages.dart';
 
 import 'test_fixtures.dart';
 
@@ -735,5 +736,106 @@ void main() {
     );
     expect(log.substitutions, hasLength(2));
     expect(log.substitutions.every((item) => item.isLiberoReplacement), isTrue);
+  });
+
+  test('links a separately created scorer log to a local game', () async {
+    final now = DateTime.utc(2026, 10, 3);
+    const sourceHome = TournamentTeam(
+      id: 'source-home',
+      name: 'Home Club',
+      shortCode: 'HOM',
+      colorValue: 0xFF123456,
+    );
+    const sourceAway = TournamentTeam(
+      id: 'source-away',
+      name: 'Away Club',
+      shortCode: 'AWY',
+      colorValue: 0xFF654321,
+    );
+    final sourceLog = ScorerLog(
+      id: 'source-log',
+      gameId: 'source-game',
+      assignedTeamId: sourceAway.id,
+      deviceId: 'other-device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: sourceHome.id,
+    );
+    final sourceGame = Game(
+      id: 'source-game',
+      tournamentId: 'source-tournament',
+      homeTeamId: sourceHome.id,
+      awayTeamId: sourceAway.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      logs: [sourceLog],
+    );
+    final sourceTournament = Tournament(
+      id: 'source-tournament',
+      name: 'Separate Tournament',
+      venue: 'Gym',
+      startsOn: now,
+      endsOn: now,
+      createdAt: now,
+      teams: const [sourceHome, sourceAway],
+      games: [sourceGame],
+    );
+    final localLog = ScorerLog(
+      id: 'local-log',
+      gameId: 'target-game',
+      assignedTeamId: homeTeam.id,
+      deviceId: 'device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+    );
+    final targetGame = Game(
+      id: 'target-game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.inProgress,
+      logs: [localLog],
+    );
+    final targetTournament = testTournament(games: [targetGame]);
+    final initial = AppData(
+      deviceId: 'device',
+      tournaments: [targetTournament],
+    );
+    final repository = MemoryAppRepository(initial);
+    final container = ProviderContainer(
+      overrides: [
+        appRepositoryProvider.overrideWithValue(repository),
+        initialAppDataProvider.overrideWithValue(initial),
+      ],
+    );
+    addTearDown(container.dispose);
+    final package = const PortablePackageService().createGamePackage(
+      packageId: 'separate-package',
+      deviceId: 'other-device',
+      exportedAt: now,
+      tournament: sourceTournament,
+      game: sourceGame,
+      log: sourceLog,
+    );
+
+    await container
+        .read(appControllerProvider.notifier)
+        .linkGamePackage(
+          package,
+          targetTournamentId: targetTournament.id,
+          targetGameId: targetGame.id,
+          sourceHomeMapsToTargetHome: true,
+          playerIdMap: const {},
+        );
+
+    final linkedGame =
+        (await repository.load()).tournaments.single.games.single;
+    expect(linkedGame.status, GameStatus.awaitingReconciliation);
+    expect(linkedGame.logs, hasLength(2));
+    expect(linkedGame.logs.last.gameId, targetGame.id);
+    expect(linkedGame.logs.last.assignedTeamId, awayTeam.id);
   });
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../domain/models.dart';
+import '../domain/game_linking.dart';
 import '../domain/packages.dart';
 import '../domain/reconciliation.dart';
 import '../domain/scoring.dart';
@@ -1107,6 +1108,66 @@ class AppController extends Notifier<AppData> {
           ...state.importedPackageIds,
           package.manifest.packageId,
         ],
+      ),
+    );
+  }
+
+  Future<void> linkGamePackage(
+    GamePackage package, {
+    required String targetTournamentId,
+    required String targetGameId,
+    required bool sourceHomeMapsToTargetHome,
+    required Map<String, String?> playerIdMap,
+  }) async {
+    final sourceLog = package.log;
+    if (sourceLog == null) {
+      throw StateError('This package does not contain a scorer log to link.');
+    }
+    final linkImportId =
+        'link:${package.manifest.packageId}:$targetTournamentId:$targetGameId';
+    if (state.importedPackageIds.contains(linkImportId)) {
+      throw StateError('This package is already linked to the selected game.');
+    }
+    final sourceGame = package.tournament.games.firstWhere(
+      (game) => game.id == package.gameId,
+      orElse: () => throw StateError('The package game is missing.'),
+    );
+    final tournaments = [...state.tournaments];
+    final tournamentIndex = tournaments.indexWhere(
+      (item) => item.id == targetTournamentId,
+    );
+    if (tournamentIndex < 0) throw StateError('Target tournament not found.');
+    final targetTournament = tournaments[tournamentIndex];
+    final games = [...targetTournament.games];
+    final gameIndex = games.indexWhere((game) => game.id == targetGameId);
+    if (gameIndex < 0) throw StateError('Target game not found.');
+    final targetGame = games[gameIndex];
+    if (targetGame.status == GameStatus.finalized) {
+      throw StateError(
+        'Reopen the finalized target game before linking a log.',
+      );
+    }
+    final linkedLog = const GameLinkingService().linkLog(
+      sourceTournament: package.tournament,
+      sourceGame: sourceGame,
+      sourceLog: sourceLog,
+      targetTournament: targetTournament,
+      targetGame: targetGame,
+      sourceHomeMapsToTargetHome: sourceHomeMapsToTargetHome,
+      playerIdMap: playerIdMap,
+      linkedLogId: _uuid.v4(),
+    );
+    games[gameIndex] = targetGame.copyWith(
+      status: targetGame.logs.isEmpty
+          ? GameStatus.inProgress
+          : GameStatus.awaitingReconciliation,
+      logs: [...targetGame.logs, linkedLog],
+    );
+    tournaments[tournamentIndex] = targetTournament.copyWith(games: games);
+    await _commit(
+      state.copyWith(
+        tournaments: tournaments,
+        importedPackageIds: [...state.importedPackageIds, linkImportId],
       ),
     );
   }
