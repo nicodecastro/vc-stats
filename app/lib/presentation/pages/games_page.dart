@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../application/file_exchange.dart';
 import '../../application/providers.dart';
 import '../../domain/models.dart';
 import '../widgets/common.dart';
@@ -38,6 +39,10 @@ class GamesPage extends ConsumerWidget {
                     final item = entries[index];
                     final home = item.tournament.team(item.game.homeTeamId);
                     final away = item.tournament.team(item.game.awayTeamId);
+                    final localLogs = item.game.logs.where(
+                      (log) => log.deviceId == data.deviceId,
+                    );
+                    final localLog = localLogs.isEmpty ? null : localLogs.first;
                     return Card(
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(
@@ -78,9 +83,17 @@ class GamesPage extends ConsumerWidget {
                             ),
                             PopupMenuButton<String>(
                               tooltip: 'Game actions',
-                              onSelected: (value) {
-                                if (value == 'delete') {
-                                  _deleteGame(
+                              onSelected: (value) async {
+                                if (value == 'export') {
+                                  await _exportGame(
+                                    context,
+                                    data,
+                                    item.tournament,
+                                    item.game,
+                                    localLog,
+                                  );
+                                } else if (value == 'delete') {
+                                  await _deleteGame(
                                     context,
                                     ref,
                                     item.tournament,
@@ -89,6 +102,18 @@ class GamesPage extends ConsumerWidget {
                                 }
                               },
                               itemBuilder: (context) => [
+                                PopupMenuItem(
+                                  value: 'export',
+                                  child: ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: const Icon(Icons.ios_share),
+                                    title: Text(
+                                      localLog == null
+                                          ? 'Export starter package'
+                                          : 'Export scorer log',
+                                    ),
+                                  ),
+                                ),
                                 PopupMenuItem(
                                   value: 'delete',
                                   child: ListTile(
@@ -134,6 +159,25 @@ class GamesPage extends ConsumerWidget {
       BracketGameType.thirdPlace => 'Third-place game',
       BracketGameType.standard => 'Knockout round ${game.bracketRound}',
     };
+  }
+
+  Future<void> _exportGame(
+    BuildContext context,
+    AppData data,
+    Tournament tournament,
+    Game game,
+    ScorerLog? log,
+  ) async {
+    try {
+      await const FileExchangeService().exportGame(data, tournament, game, log);
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Game package exported.')));
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
   }
 
   Future<void> _deleteGame(

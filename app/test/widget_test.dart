@@ -5,6 +5,7 @@ import 'package:vc_sets/application/providers.dart';
 import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/presentation/app.dart';
+import 'package:vc_sets/presentation/pages/games_page.dart';
 import 'package:vc_sets/presentation/pages/reports_page.dart';
 import 'package:vc_sets/presentation/pages/tracker_page.dart';
 
@@ -163,5 +164,33 @@ void main() {
     expect(find.text('V-'), findsOneWidget);
     expect(find.text('OP+'), findsOneWidget);
     expect(find.text('T-'), findsOneWidget);
+  });
+
+  testWidgets('games tab offers game package export', (tester) async {
+    final game = testGame(logs: [testLog(deviceId: 'test-device')]);
+    final data = AppData(
+      deviceId: 'test-device',
+      tournaments: [
+        testTournament(games: [game]),
+      ],
+    );
+    final repository = MemoryAppRepository(data);
+    await tester.binding.setSurfaceSize(const Size(900, 700));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: const MaterialApp(home: Scaffold(body: GamesPage())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Game actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Export scorer log'), findsOneWidget);
+    expect(find.text('Delete game'), findsOneWidget);
   });
 }
