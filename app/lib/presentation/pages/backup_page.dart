@@ -187,6 +187,9 @@ class BackupPage extends ConsumerWidget {
             tournament.id == package.tournament.id &&
             tournament.games.any((item) => item.id == package.gameId),
       );
+      final packageAlreadyImported = data.importedPackageIds.contains(
+        package.manifest.packageId,
+      );
       final linkCandidates = <({Tournament tournament, Game game})>[
         for (final tournament in data.tournaments)
           for (final localGame in tournament.games)
@@ -196,42 +199,32 @@ class BackupPage extends ConsumerWidget {
                     localGame.id == package.gameId))
               (tournament: tournament, game: localGame),
       ];
+      final canLink =
+          package.log != null &&
+          linkCandidates.isNotEmpty &&
+          (!exactGameExists || packageAlreadyImported);
       final choice = await showDialog<String>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Import game package?'),
           content: Text(
             '${package.tournament.name}\n${home.name} vs ${away.name}\n${package.log == null ? 'Starter package' : 'Includes a scorer log with ${package.log!.rallies.length} rallies'}'
-            '${!exactGameExists && package.log != null && linkCandidates.isNotEmpty ? '\n\nIf this is the same real-world match as a separately created local game, choose Link to existing.' : ''}',
+            '${canLink ? '\n\nIf this is the same real-world match as a separately created local game, choose Link to existing.' : ''}',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
-            if (!exactGameExists &&
-                package.log != null &&
-                linkCandidates.isNotEmpty)
+            if (canLink && !packageAlreadyImported)
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, 'separate'),
                 child: const Text('Import separately'),
               ),
             FilledButton(
-              onPressed: () => Navigator.pop(
-                dialogContext,
-                !exactGameExists &&
-                        package.log != null &&
-                        linkCandidates.isNotEmpty
-                    ? 'link'
-                    : 'import',
-              ),
-              child: Text(
-                !exactGameExists &&
-                        package.log != null &&
-                        linkCandidates.isNotEmpty
-                    ? 'Link to existing'
-                    : 'Import',
-              ),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, canLink ? 'link' : 'import'),
+              child: Text(canLink ? 'Link to existing' : 'Import'),
             ),
           ],
         ),
