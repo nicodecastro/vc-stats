@@ -106,6 +106,8 @@ void main() {
     expect(find.text('ERR'), findsNWidgets(6));
     expect(find.text('OPP ERR  •  OP+'), findsOneWidget);
     expect(find.text('TEAM FAULT  •  T-'), findsOneWidget);
+    expect(find.text('Home 4'), findsOneWidget);
+    expect(find.text('UT • IV'), findsOneWidget);
 
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     await tester.pumpAndSettle();

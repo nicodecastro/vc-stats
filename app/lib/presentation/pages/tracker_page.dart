@@ -1098,7 +1098,7 @@ class _HalfCourt extends StatelessWidget {
         button: true,
         selected: selected,
         label:
-            'Position ${_roman(position)}, number ${player.number}, ${player.name}',
+            'Position ${_roman(position)}, number ${player.number}, ${player.name}, ${player.position.name}',
         child: InkWell(
           onTap: () => onSelected(playerId),
           borderRadius: BorderRadius.circular(14),
@@ -1125,9 +1125,23 @@ class _HalfCourt extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge
                       ?.copyWith(fontWeight: FontWeight.w900),
                 ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    player.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.labelMedium
+                        ?.copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ),
                 Text(
-                  _roman(position),
-                  style: Theme.of(context).textTheme.labelSmall,
+                  '${player.position.name} • ${_roman(position)}',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 10,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
