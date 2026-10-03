@@ -268,7 +268,7 @@ class TournamentDetailPage extends ConsumerWidget {
   }
 
   MatchRules _withBestOf(MatchRules rules, int bestOf) =>
-      rules.copyWith(setsToWin: bestOf == 3 ? 2 : 3, maxSets: bestOf);
+      rules.copyWith(setsToWin: bestOf ~/ 2 + 1, maxSets: bestOf);
 
   Future<void> _editTournament(
     BuildContext context,
@@ -1682,9 +1682,14 @@ class _BestOfField extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: DropdownButtonFormField<int>(
-      initialValue: value == 3 ? 3 : 5,
+      initialValue: switch (value) {
+        1 => 1,
+        3 => 3,
+        _ => 5,
+      },
       decoration: InputDecoration(labelText: label),
       items: const [
+        DropdownMenuItem(value: 1, child: Text('One set')),
         DropdownMenuItem(value: 3, child: Text('Best of 3')),
         DropdownMenuItem(value: 5, child: Text('Best of 5')),
       ],

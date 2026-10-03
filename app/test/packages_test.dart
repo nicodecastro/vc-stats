@@ -55,6 +55,7 @@ void main() {
   });
 
   test('backup preserves pools, phase rules, and third-place games', () {
+    const oneSet = MatchRules(setsToWin: 1, maxSets: 1);
     const bestOfThree = MatchRules(setsToWin: 2, maxSets: 3);
     final tournament = Tournament(
       id: 'phased',
@@ -67,7 +68,7 @@ void main() {
       poolCount: 2,
       qualifiersPerPool: 2,
       thirdPlaceEnabled: true,
-      poolRules: bestOfThree,
+      poolRules: oneSet,
       thirdPlaceRules: bestOfThree,
       teams: [
         homeTeam.copyWith(poolNumber: 1),
@@ -98,6 +99,8 @@ void main() {
     expect(restored.format, TournamentFormat.poolsThenKnockout);
     expect(restored.poolCount, 2);
     expect(restored.thirdPlaceEnabled, isTrue);
+    expect(restored.poolRules?.setsToWin, 1);
+    expect(restored.poolRules?.maxSets, 1);
     expect(restored.teams.last.poolNumber, 2);
     expect(restored.games.single.bracketType, BracketGameType.thirdPlace);
     expect(restored.games.single.rulesSnapshot?.maxSets, 3);

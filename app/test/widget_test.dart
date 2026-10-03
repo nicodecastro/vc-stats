@@ -217,6 +217,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Edit tournament'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Best of 5'));
+    await tester.pumpAndSettle();
+    expect(find.text('One set'), findsOneWidget);
+    await tester.tap(find.text('One set'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Delete tournament'));
     await tester.pumpAndSettle();
 

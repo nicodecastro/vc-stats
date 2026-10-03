@@ -232,10 +232,11 @@ class StatisticsService {
       (homeWon ? home : away).wins++;
       (homeWon ? away : home).losses++;
       final deciding =
-          sets.homeSets == gameRules.setsToWin &&
-              sets.awaySets == gameRules.setsToWin - 1 ||
-          sets.awaySets == gameRules.setsToWin &&
-              sets.homeSets == gameRules.setsToWin - 1;
+          gameRules.maxSets > 1 &&
+          (sets.homeSets == gameRules.setsToWin &&
+                  sets.awaySets == gameRules.setsToWin - 1 ||
+              sets.awaySets == gameRules.setsToWin &&
+                  sets.homeSets == gameRules.setsToWin - 1);
       final policy = gameRules.standings;
       if (deciding) {
         (homeWon ? home : away).matchPoints += policy.decidingWinPoints;

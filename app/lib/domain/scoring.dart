@@ -99,7 +99,7 @@ class ScoringEngine {
   }
 
   bool isSetComplete(int home, int away, int setNumber, MatchRules rules) {
-    final target = setNumber == rules.maxSets
+    final target = rules.maxSets > 1 && setNumber == rules.maxSets
         ? rules.decidingSetTarget
         : rules.regularSetTarget;
     return (home >= target || away >= target) &&

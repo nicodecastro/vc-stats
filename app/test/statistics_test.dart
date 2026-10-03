@@ -108,6 +108,53 @@ void main() {
     expect(standings.last.wins, 0);
   });
 
+  test('one-set matches award clear-win standings points', () {
+    const oneSetRules = MatchRules(setsToWin: 1, maxSets: 1);
+    final now = DateTime.utc(2026, 10, 3);
+    final official = ScorerLog(
+      id: 'one-set-log',
+      gameId: 'one-set-game',
+      assignedTeamId: 'official',
+      deviceId: 'device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+      rallies: [
+        Rally(
+          id: 'one-set-rally',
+          setNumber: 1,
+          sequence: 25,
+          winnerTeamId: homeTeam.id,
+          homeScore: 25,
+          awayScore: 10,
+          homeRotation: 1,
+          awayRotation: 1,
+          servingTeamId: homeTeam.id,
+          recordedAt: now,
+        ),
+      ],
+    );
+    final game = Game(
+      id: 'one-set-game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.finalized,
+      rulesSnapshot: oneSetRules,
+      officialLog: official,
+    );
+
+    final standings = const StatisticsService().standings(
+      testTournament(games: [game]).copyWith(poolRules: oneSetRules),
+    );
+
+    expect(standings.first.team.id, homeTeam.id);
+    expect(standings.first.matchPoints, 3);
+    expect(standings.last.matchPoints, 0);
+  });
+
   test('player stats matrix buckets notation and repeats team faults', () {
     const first = Player(
       id: 'p1',

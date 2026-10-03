@@ -14,6 +14,31 @@ void main() {
     expect(engine.isSetComplete(14, 16, 5, rules), isTrue);
   });
 
+  test('one-set matches use the regular target and finish after that set', () {
+    const oneSetRules = MatchRules(setsToWin: 1, maxSets: 1);
+    final game = testGame();
+    var log = testLog();
+
+    expect(engine.isSetComplete(15, 0, 1, oneSetRules), isFalse);
+    for (var point = 0; point < 25; point++) {
+      final rally = engine.nextRally(
+        id: 'single-$point',
+        game: game,
+        log: log,
+        rules: oneSetRules,
+        winnerTeamId: homeTeam.id,
+        recordedAt: DateTime.utc(2026, 10, 3),
+      );
+      log = log.copyWith(rallies: [...log.rallies, rally]);
+    }
+
+    final score = engine.score(game, log, oneSetRules);
+    expect(score.homePoints, 25);
+    expect(score.homeSets, 1);
+    expect(score.awaySets, 0);
+    expect(score.isComplete, isTrue);
+  });
+
   test('sideout rotates receiving team and winner serves', () {
     final game = testGame();
     final empty = testLog();
