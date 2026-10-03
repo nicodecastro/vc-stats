@@ -158,6 +158,11 @@ class BackupPage extends ConsumerWidget {
       );
       if (confirmed == true) {
         await ref.read(appControllerProvider.notifier).restoreBackup(backup);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Backup restored successfully.')),
+          );
+        }
       }
     } catch (error) {
       if (context.mounted) showError(context, error);

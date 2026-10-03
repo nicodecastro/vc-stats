@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vc_sets/application/file_exchange.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/domain/packages.dart';
 
@@ -52,6 +54,25 @@ void main() {
     final restored = service.decodeBackup(source);
     expect(restored.tournaments.single.name, 'Club Cup');
     expect(restored.importedPackageIds, ['one']);
+  });
+
+  test('backup byte import accepts a UTF-8 byte-order mark', () {
+    final source = service.createBackup(
+      packageId: 'bom-backup',
+      data: AppData(deviceId: 'device-a', tournaments: [testTournament()]),
+      exportedAt: DateTime.utc(2026, 10, 3),
+    );
+    final bytes = Uint8List.fromList([
+      0xEF,
+      0xBB,
+      0xBF,
+      ...utf8.encode(source),
+    ]);
+
+    final restored = const FileExchangeService().decodeBackupBytes(bytes);
+
+    expect(restored.deviceId, 'device-a');
+    expect(restored.tournaments.single.name, 'Club Cup');
   });
 
   test('backup preserves pools, phase rules, and third-place games', () {

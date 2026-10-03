@@ -8,6 +8,9 @@ import 'package:uuid/uuid.dart';
 import '../domain/models.dart';
 import '../domain/packages.dart';
 import '../domain/statistics.dart';
+import 'file_picker_options.dart'
+    if (dart.library.js_interop) 'file_picker_options_web.dart'
+    as picker_options;
 
 class FileExchangeService {
   const FileExchangeService();
@@ -33,16 +36,15 @@ class FileExchangeService {
   }
 
   Future<GamePackage?> pickGamePackage() async {
-    // iOS Files disables unknown custom extensions when an accept filter is
-    // present. Allow selection first; package decoding validates type/hash.
-    final file = await FilePicker.pickFile(
-      dialogTitle: 'Import VC SETS game package',
-      type: FileType.any,
-    );
-    if (file == null) return null;
-    final bytes = await file.readAsBytes();
-    return const PortablePackageService().decodeGamePackage(utf8.decode(bytes));
+    final bytes = await _pickPortableFile('Import VC SETS game package');
+    if (bytes == null) return null;
+    return decodeGamePackageBytes(bytes);
   }
+
+  GamePackage decodeGamePackageBytes(Uint8List bytes) =>
+      const PortablePackageService().decodeGamePackage(
+        _decodePortableText(bytes),
+      );
 
   Future<void> exportBackup(AppData data) async {
     final now = DateTime.now();
@@ -58,16 +60,13 @@ class FileExchangeService {
   }
 
   Future<AppData?> pickBackup() async {
-    // See pickGamePackage: content validation is more portable than an OS
-    // extension filter for .vcbackup files.
-    final file = await FilePicker.pickFile(
-      dialogTitle: 'Restore VC SETS backup',
-      type: FileType.any,
-    );
-    if (file == null) return null;
-    final bytes = await file.readAsBytes();
-    return const PortablePackageService().decodeBackup(utf8.decode(bytes));
+    final bytes = await _pickPortableFile('Restore VC SETS backup');
+    if (bytes == null) return null;
+    return decodeBackupBytes(bytes);
   }
+
+  AppData decodeBackupBytes(Uint8List bytes) =>
+      const PortablePackageService().decodeBackup(_decodePortableText(bytes));
 
   Future<void> exportStandingsCsv(Tournament tournament) async {
     final buffer = StringBuffer(
@@ -175,6 +174,38 @@ $playerRows
       bytes: Uint8List.fromList(utf8.encode(source)),
       mimeType: mime,
     );
+  }
+
+  Future<Uint8List?> _pickPortableFile(String dialogTitle) async {
+    // Do not apply an extension filter: iOS Files disables unknown custom
+    // extensions such as .vcbackup and .vcgame when an accept filter exists.
+    // On web, preload bytes and do not cancel when the iOS Files sheet causes
+    // Safari/PWA to lose focus.
+    final file = await FilePicker.pickFile(
+      dialogTitle: dialogTitle,
+      type: FileType.any,
+      webOptions: picker_options.portableImportWebOptions(),
+    );
+    if (file == null) return null;
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) {
+        throw const FormatException('The selected file is empty.');
+      }
+      return bytes;
+    } on FormatException {
+      rethrow;
+    } catch (_) {
+      throw StateError(
+        'The selected file could not be read. On iPhone or iPad, save it in the Files app first, then select it from On My iPhone or iCloud Drive.',
+      );
+    }
+  }
+
+  String _decodePortableText(Uint8List bytes) {
+    var source = utf8.decode(bytes);
+    if (source.startsWith('\uFEFF')) source = source.substring(1);
+    return source;
   }
 
   String _safe(String value) => value
