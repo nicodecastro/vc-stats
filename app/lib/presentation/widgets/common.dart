@@ -129,3 +129,42 @@ Future<bool> confirmDeleteGame(
       ) ??
       false;
 }
+
+Future<bool> confirmDeleteTournament(
+  BuildContext context, {
+  required Tournament tournament,
+}) async {
+  final teamLabel = tournament.teams.length == 1 ? 'team' : 'teams';
+  final gameLabel = tournament.games.length == 1 ? 'game' : 'games';
+  return await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: Icon(
+            Icons.delete_forever_outlined,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: const Text('Delete tournament?'),
+          content: Text(
+            '${tournament.name} will be permanently removed.\n\n'
+            'This deletes ${tournament.teams.length} $teamLabel and '
+            '${tournament.games.length} $gameLabel, including every roster, '
+            'scorer log, result, and statistic in this tournament. This cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+                foregroundColor: Theme.of(context).colorScheme.onError,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete tournament'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+}

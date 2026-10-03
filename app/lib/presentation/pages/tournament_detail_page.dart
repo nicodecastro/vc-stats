@@ -68,6 +68,15 @@ class TournamentDetailPage extends ConsumerWidget {
               icon: const Icon(Icons.auto_awesome),
               label: const Text('Round robin'),
             ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+                side: BorderSide(color: Theme.of(context).colorScheme.error),
+              ),
+              onPressed: () => _deleteTournament(context, ref, tournament),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Delete tournament'),
+            ),
           ],
         ),
         _Section(
@@ -554,6 +563,32 @@ class TournamentDetailPage extends ConsumerWidget {
       if (context.mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Tournament updated.')));
+      }
+    } catch (error) {
+      if (context.mounted) showError(context, error);
+    }
+  }
+
+  Future<void> _deleteTournament(
+    BuildContext context,
+    WidgetRef ref,
+    Tournament tournament,
+  ) async {
+    final confirmed = await confirmDeleteTournament(
+      context,
+      tournament: tournament,
+    );
+    if (!confirmed || !context.mounted) return;
+    try {
+      await ref
+          .read(appControllerProvider.notifier)
+          .deleteTournament(tournament.id);
+      if (context.mounted) {
+        final messenger = ScaffoldMessenger.of(context);
+        context.go('/tournaments');
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Tournament deleted.')),
+        );
       }
     } catch (error) {
       if (context.mounted) showError(context, error);

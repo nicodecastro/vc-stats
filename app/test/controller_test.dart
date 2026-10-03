@@ -132,6 +132,30 @@ void main() {
     expect(edited.games.single.scheduledAt, originalGame.scheduledAt);
   });
 
+  test('deletes a tournament and all of its nested data', () async {
+    final tournament = testTournament(
+      games: [
+        testGame(logs: [testLog()]),
+      ],
+    );
+    final initial = AppData(deviceId: 'device', tournaments: [tournament]);
+    final repository = MemoryAppRepository(initial);
+    final container = ProviderContainer(
+      overrides: [
+        appRepositoryProvider.overrideWithValue(repository),
+        initialAppDataProvider.overrideWithValue(initial),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(appControllerProvider.notifier)
+        .deleteTournament(tournament.id);
+
+    expect(container.read(appControllerProvider).tournaments, isEmpty);
+    expect((await repository.load()).tournaments, isEmpty);
+  });
+
   test(
     'replaces a roster while preserving player identities and captain',
     () async {

@@ -1100,6 +1100,19 @@ class AppController extends Notifier<AppData> {
     });
   }
 
+  Future<void> deleteTournament(String tournamentId) async {
+    if (!state.tournaments.any((item) => item.id == tournamentId)) {
+      throw StateError('Tournament not found.');
+    }
+    await _commit(
+      state.copyWith(
+        tournaments: state.tournaments
+            .where((item) => item.id != tournamentId)
+            .toList(),
+      ),
+    );
+  }
+
   Future<void> restoreBackup(AppData backup) => _commit(
     AppData(
       deviceId: state.deviceId,

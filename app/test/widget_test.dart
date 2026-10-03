@@ -7,6 +7,7 @@ import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/presentation/app.dart';
 import 'package:vc_sets/presentation/pages/games_page.dart';
 import 'package:vc_sets/presentation/pages/reports_page.dart';
+import 'package:vc_sets/presentation/pages/tournament_detail_page.dart';
 import 'package:vc_sets/presentation/pages/tracker_page.dart';
 
 import 'test_fixtures.dart';
@@ -192,5 +193,40 @@ void main() {
 
     expect(find.text('Export scorer log'), findsOneWidget);
     expect(find.text('Delete game'), findsOneWidget);
+  });
+
+  testWidgets('tournament deletion requires destructive confirmation', (
+    tester,
+  ) async {
+    final tournament = testTournament(games: [testGame()]);
+    final data = AppData(deviceId: 'test-device', tournaments: [tournament]);
+    final repository = MemoryAppRepository(data);
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: TournamentDetailPage(tournamentId: tournament.id),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Delete tournament'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Delete tournament?'), findsOneWidget);
+    expect(find.textContaining('2 teams and 1 game'), findsOneWidget);
+    expect(find.textContaining('This cannot be undone.'), findsOneWidget);
+
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete tournament?'), findsNothing);
+    expect((await repository.load()).tournaments, hasLength(1));
   });
 }
