@@ -839,6 +839,91 @@ class AppController extends Notifier<AppData> {
     });
   }
 
+  Future<String> recordLiberoSwap(
+    String tournamentId,
+    String gameId, {
+    required String selectedPlayerId,
+    required String liberoId,
+  }) async {
+    String? incomingPlayerId;
+    await _updateGame(tournamentId, gameId, (tournament, game) {
+      final index = game.logs.indexWhere(
+        (log) => log.deviceId == state.deviceId,
+      );
+      if (index < 0) {
+        throw StateError('Start a scorer log on this device first.');
+      }
+      final log = game.logs[index];
+      final score = const ScoringEngine().score(
+        game,
+        log,
+        tournament.rulesFor(game),
+      );
+      if (score.isComplete) throw StateError('The match is already complete.');
+      final team = tournament.team(log.assignedTeamId);
+      final liberoMatches = team.players.where(
+        (player) => player.id == liberoId && player.isLibero,
+      );
+      if (liberoMatches.isEmpty) {
+        throw StateError('Select a libero from the tournament roster.');
+      }
+      final serviceOrder = log.serviceOrderFor(team.id, score.setNumber);
+      if (!serviceOrder.contains(selectedPlayerId)) {
+        throw StateError('Select an on-court player to swap.');
+      }
+
+      late final String outgoing;
+      if (serviceOrder.contains(liberoId)) {
+        if (selectedPlayerId != liberoId) {
+          throw StateError(
+            'Select the on-court libero to restore the replaced player.',
+          );
+        }
+        final replacements = log.substitutions
+            .where(
+              (item) =>
+                  item.teamId == team.id &&
+                  item.setNumber == score.setNumber &&
+                  item.isLiberoReplacement &&
+                  item.playerInId == liberoId &&
+                  !serviceOrder.contains(item.playerOutId),
+            )
+            .toList()
+            .reversed;
+        if (replacements.isEmpty) {
+          throw StateError('There is no recorded player to restore.');
+        }
+        outgoing = liberoId;
+        incomingPlayerId = replacements.first.playerOutId;
+      } else {
+        outgoing = selectedPlayerId;
+        incomingPlayerId = liberoId;
+      }
+
+      final now = DateTime.now();
+      final logs = [...game.logs];
+      logs[index] = log.copyWith(
+        updatedAt: now,
+        substitutions: [
+          ...log.substitutions,
+          Substitution(
+            id: _uuid.v4(),
+            teamId: team.id,
+            setNumber: score.setNumber,
+            playerOutId: outgoing,
+            playerInId: incomingPlayerId!,
+            homeScore: score.homePoints,
+            awayScore: score.awayPoints,
+            recordedAt: now,
+            kind: SubstitutionKind.liberoReplacement,
+          ),
+        ],
+      );
+      return game.copyWith(logs: logs);
+    });
+    return incomingPlayerId!;
+  }
+
   Future<void> recordTimeout(String tournamentId, String gameId) async {
     await _updateGame(tournamentId, gameId, (tournament, game) {
       final index = game.logs.indexWhere(

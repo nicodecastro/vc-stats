@@ -652,4 +652,88 @@ void main() {
       );
     },
   );
+
+  test('quick libero swaps replace and restore the selected player', () async {
+    const benchPlayer = Player(
+      id: 'home-bench',
+      number: 20,
+      name: 'Bench Player',
+      position: PlayerPosition.OH,
+    );
+    final libero = homeTeam.players.last;
+    final trackedHome = homeTeam.copyWith(
+      players: [...homeTeam.players, benchPlayer],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: trackedHome.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: DateTime.utc(2026, 10, 3),
+      venue: 'Gym',
+    );
+    final tournament = Tournament(
+      id: 'tournament',
+      name: 'League',
+      venue: 'Gym',
+      startsOn: DateTime.utc(2026, 10, 3),
+      endsOn: DateTime.utc(2026, 10, 3),
+      createdAt: DateTime.utc(2026, 10, 1),
+      teams: [trackedHome, awayTeam],
+      games: [game],
+    );
+    final initial = AppData(deviceId: 'device', tournaments: [tournament]);
+    final repository = MemoryAppRepository(initial);
+    final container = ProviderContainer(
+      overrides: [
+        appRepositoryProvider.overrideWithValue(repository),
+        initialAppDataProvider.overrideWithValue(initial),
+      ],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(appControllerProvider.notifier);
+    await controller.startScorerLog(
+      'tournament',
+      'game',
+      assignedTeamId: trackedHome.id,
+      initialServingTeamId: trackedHome.id,
+    );
+    final regularPlayerIds = [
+      ...homeTeam.players.take(5).map((player) => player.id),
+      benchPlayer.id,
+    ];
+    await controller.setLineup(
+      'tournament',
+      'game',
+      setNumber: 1,
+      playerIds: regularPlayerIds,
+    );
+
+    final incomingLibero = await controller.recordLiberoSwap(
+      'tournament',
+      'game',
+      selectedPlayerId: regularPlayerIds.first,
+      liberoId: libero.id,
+    );
+    expect(incomingLibero, libero.id);
+    var log =
+        (await repository.load()).tournaments.single.games.single.logs.single;
+    expect(log.serviceOrderFor(trackedHome.id, 1).first, libero.id);
+    expect(log.substitutions.single.isLiberoReplacement, isTrue);
+
+    final restoredPlayer = await controller.recordLiberoSwap(
+      'tournament',
+      'game',
+      selectedPlayerId: libero.id,
+      liberoId: libero.id,
+    );
+    expect(restoredPlayer, regularPlayerIds.first);
+    log = (await repository.load()).tournaments.single.games.single.logs.single;
+    expect(
+      log.serviceOrderFor(trackedHome.id, 1).first,
+      regularPlayerIds.first,
+    );
+    expect(log.substitutions, hasLength(2));
+    expect(log.substitutions.every((item) => item.isLiberoReplacement), isTrue);
+  });
 }

@@ -10,6 +10,8 @@ enum TournamentFormat { roundRobin, poolsThenKnockout, knockoutOnly }
 
 enum BracketGameType { standard, finalMatch, thirdPlace }
 
+enum SubstitutionKind { regular, liberoReplacement }
+
 enum PlayerPosition { S, OH, OPP, MB, L, DS, UT }
 
 enum Skill {
@@ -445,6 +447,7 @@ class Substitution {
     required this.homeScore,
     required this.awayScore,
     required this.recordedAt,
+    this.kind = SubstitutionKind.regular,
   });
 
   final String id;
@@ -455,6 +458,9 @@ class Substitution {
   final int homeScore;
   final int awayScore;
   final DateTime recordedAt;
+  final SubstitutionKind kind;
+
+  bool get isLiberoReplacement => kind == SubstitutionKind.liberoReplacement;
 
   Map<String, Object?> toJson() => {
     'id': id,
@@ -465,6 +471,7 @@ class Substitution {
     'homeScore': homeScore,
     'awayScore': awayScore,
     'recordedAt': recordedAt.toUtc().toIso8601String(),
+    'kind': kind.name,
   };
 
   factory Substitution.fromJson(Map<String, Object?> json) => Substitution(
@@ -476,6 +483,11 @@ class Substitution {
     homeScore: (json['homeScore'] as num?)?.toInt() ?? 0,
     awayScore: (json['awayScore'] as num?)?.toInt() ?? 0,
     recordedAt: DateTime.parse(json['recordedAt']! as String),
+    kind: enumByName(
+      SubstitutionKind.values,
+      json['kind'],
+      SubstitutionKind.regular,
+    ),
   );
 }
 
@@ -1044,7 +1056,7 @@ class AppData {
   );
 
   Map<String, Object?> toJson() => {
-    'schemaVersion': 4,
+    'schemaVersion': 5,
     'deviceId': deviceId,
     'tournaments': tournaments.map((item) => item.toJson()).toList(),
     'importedPackageIds': importedPackageIds,

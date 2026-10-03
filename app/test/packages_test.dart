@@ -133,6 +133,7 @@ void main() {
           homeScore: 4,
           awayScore: 3,
           recordedAt: now,
+          kind: SubstitutionKind.liberoReplacement,
         ),
       ],
       timeouts: [
@@ -159,6 +160,7 @@ void main() {
     final decoded = service.decodeGamePackage(package.encode()).log!;
     expect(decoded.lineups.single.setNumber, 1);
     expect(decoded.substitutions.single.playerInId, 'bench');
+    expect(decoded.substitutions.single.isLiberoReplacement, isTrue);
     expect(decoded.timeouts.single.homeScore, 8);
   });
 }

@@ -23,6 +23,7 @@ class TrackerPage extends ConsumerStatefulWidget {
 class _TrackerPageState extends ConsumerState<TrackerPage> {
   final pending = <TeamAction>[];
   String? selectedPlayerId;
+  String? selectedLiberoId;
 
   @override
   Widget build(BuildContext context) {
@@ -70,6 +71,12 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
     if (!courtPlayerIds.contains(selectedPlayerId)) {
       selectedPlayerId = courtPlayerIds.firstOrNull;
     }
+    final liberos = assigned.players
+        .where((player) => player.isLibero)
+        .toList();
+    if (!liberos.any((player) => player.id == selectedLiberoId)) {
+      selectedLiberoId = liberos.firstOrNull?.id;
+    }
     final setTimeouts = log.timeouts
         .where(
           (timeout) =>
@@ -81,7 +88,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
         .where(
           (substitution) =>
               substitution.teamId == assigned.id &&
-              substitution.setNumber == score.setNumber,
+              substitution.setNumber == score.setNumber &&
+              !substitution.isLiberoReplacement,
         )
         .length;
     return Scaffold(
@@ -121,9 +129,13 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               selectedPlayerId: selectedPlayerId,
               timeoutsUsed: setTimeouts,
               substitutionsUsed: setSubstitutions,
+              liberos: liberos,
+              selectedLiberoId: selectedLiberoId,
               pending: pending,
               onPlayerChanged: (value) =>
                   setState(() => selectedPlayerId = value),
+              onLiberoChanged: (value) =>
+                  setState(() => selectedLiberoId = value),
               onAdd: _addAction,
               onRemove: (action) => setState(() => pending.remove(action)),
               onUndo: log.rallies.isEmpty ? null : _undo,
@@ -136,6 +148,13 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               onTimeout: score.isComplete || setTimeouts >= 2
                   ? null
                   : () => _recordTimeout(assigned, score),
+              onLiberoSwap:
+                  score.isComplete ||
+                      selectedPlayerId == null ||
+                      selectedLiberoId == null ||
+                      courtPlayerIds.length != 6
+                  ? null
+                  : _recordLiberoSwap,
             );
             final timeline = _Timeline(
               log: log,
@@ -388,6 +407,25 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       await ref
           .read(appControllerProvider.notifier)
           .recordTimeout(widget.tournamentId, widget.gameId);
+    } catch (error) {
+      if (mounted) showError(context, error);
+    }
+  }
+
+  Future<void> _recordLiberoSwap() async {
+    final playerId = selectedPlayerId;
+    final liberoId = selectedLiberoId;
+    if (playerId == null || liberoId == null) return;
+    try {
+      final incoming = await ref
+          .read(appControllerProvider.notifier)
+          .recordLiberoSwap(
+            widget.tournamentId,
+            widget.gameId,
+            selectedPlayerId: playerId,
+            liberoId: liberoId,
+          );
+      if (mounted) setState(() => selectedPlayerId = incoming);
     } catch (error) {
       if (mounted) showError(context, error);
     }
@@ -730,14 +768,18 @@ class _EntryPanel extends StatelessWidget {
     required this.selectedPlayerId,
     required this.timeoutsUsed,
     required this.substitutionsUsed,
+    required this.liberos,
+    required this.selectedLiberoId,
     required this.pending,
     required this.onPlayerChanged,
+    required this.onLiberoChanged,
     required this.onAdd,
     required this.onRemove,
     required this.onUndo,
     required this.onEditLineup,
     required this.onSubstitution,
     required this.onTimeout,
+    required this.onLiberoSwap,
   });
   final TournamentTeam team;
   final int setNumber;
@@ -746,14 +788,18 @@ class _EntryPanel extends StatelessWidget {
   final String? selectedPlayerId;
   final int timeoutsUsed;
   final int substitutionsUsed;
+  final List<Player> liberos;
+  final String? selectedLiberoId;
   final List<TeamAction> pending;
   final ValueChanged<String?> onPlayerChanged;
+  final ValueChanged<String?> onLiberoChanged;
   final void Function(Skill, ActionGrade, TournamentTeam) onAdd;
   final ValueChanged<TeamAction> onRemove;
   final VoidCallback? onUndo;
   final VoidCallback? onEditLineup;
   final VoidCallback? onSubstitution;
   final VoidCallback? onTimeout;
+  final VoidCallback? onLiberoSwap;
   @override
   Widget build(BuildContext context) => Card(
     child: Padding(
@@ -804,6 +850,40 @@ class _EntryPanel extends StatelessWidget {
                 label: Text('Timeout ($timeoutsUsed/2)'),
               ),
               Chip(label: Text('Rotation $rotation')),
+              SizedBox(
+                width: 170,
+                child: DropdownButtonFormField<String>(
+                  key: ValueKey('libero-$selectedLiberoId'),
+                  initialValue: selectedLiberoId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Libero',
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                  hint: const Text('No libero'),
+                  items: liberos
+                      .map(
+                        (player) => DropdownMenuItem(
+                          value: player.id,
+                          child: Text(
+                            '#${player.number} ${player.name}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: liberos.isEmpty ? null : onLiberoChanged,
+                ),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: onLiberoSwap,
+                icon: const Icon(Icons.sync_alt),
+                label: const Text('Quick swap'),
+              ),
             ],
           ),
           const SizedBox(height: 14),
@@ -1134,12 +1214,26 @@ class _Timeline extends StatelessWidget {
       final incoming = trackedTeam.players.firstWhere(
         (player) => player.id == substitution.playerInId,
       );
+      final liberoIncoming = incoming.isLibero;
       return ListTile(
         dense: true,
-        leading: const CircleAvatar(child: Icon(Icons.swap_horiz, size: 18)),
-        title: Text('#${incoming.number} in • #${outgoing.number} out'),
+        leading: CircleAvatar(
+          child: Icon(
+            substitution.isLiberoReplacement
+                ? Icons.sync_alt
+                : Icons.swap_horiz,
+            size: 18,
+          ),
+        ),
+        title: Text(
+          substitution.isLiberoReplacement
+              ? liberoIncoming
+                    ? 'Libero #${incoming.number} in • #${outgoing.number} out'
+                    : '#${incoming.number} returns • Libero #${outgoing.number} out'
+              : '#${incoming.number} in • #${outgoing.number} out',
+        ),
         subtitle: Text(
-          'Set ${substitution.setNumber} • ${substitution.homeScore}-${substitution.awayScore}',
+          '${substitution.isLiberoReplacement ? 'Libero replacement • ' : ''}Set ${substitution.setNumber} • ${substitution.homeScore}-${substitution.awayScore}',
         ),
       );
     }

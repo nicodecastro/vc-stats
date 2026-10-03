@@ -98,6 +98,8 @@ void main() {
     expect(find.text('R-5 lineup • Set 1'), findsOneWidget);
     expect(find.text('Substitution (0)'), findsOneWidget);
     expect(find.text('Timeout (0/2)'), findsOneWidget);
+    expect(find.text('Libero'), findsOneWidget);
+    expect(find.text('Quick swap'), findsOneWidget);
     expect(find.text('#1'), findsWidgets);
     expect(find.text('ATT'), findsNWidgets(6));
     expect(find.text('EXC'), findsNWidgets(6));
