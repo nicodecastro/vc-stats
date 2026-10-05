@@ -8,6 +8,9 @@ import '../../domain/models.dart';
 import '../../domain/scoring.dart';
 import '../widgets/common.dart';
 
+String _romanPosition(int position) =>
+    const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
+
 class TrackerPage extends ConsumerStatefulWidget {
   const TrackerPage({
     super.key,
@@ -226,7 +229,7 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    'Choose the six starting players in service order I–VI. Position I is the server/right-back position.',
+                    'Tap a player on the court to open the roster dropdown for that position. Position I is the server/right-back position.',
                   ),
                   const SizedBox(height: 14),
                   if (team.players.length < 6)
@@ -235,28 +238,21 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                       style: TextStyle(color: Colors.deepOrange),
                     )
                   else
-                    for (var index = 0; index < 6; index++) ...[
-                      DropdownButtonFormField<String>(
-                        key: ValueKey('lineup-$index-${selected[index]}'),
-                        initialValue: selected[index],
-                        decoration: InputDecoration(
-                          labelText: 'Position ${_roman(index + 1)}',
-                        ),
-                        items: team.players
-                            .map(
-                              (player) => DropdownMenuItem(
-                                value: player.id,
-                                child: Text(
-                                  '#${player.number} ${player.name}${player.isLibero ? ' • L' : ''}',
-                                ),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) =>
-                            setDialogState(() => selected[index] = value!),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
+                    _R5LineupEditor(
+                      team: team,
+                      selectedPlayerIds: selected,
+                      onPlayerSelected: (position, playerId) {
+                        setDialogState(() {
+                          final previousPlayerId = selected[position];
+                          final previousPosition = selected.indexOf(playerId);
+                          selected[position] = playerId;
+                          if (previousPosition >= 0 &&
+                              previousPosition != position) {
+                            selected[previousPosition] = previousPlayerId;
+                          }
+                        });
+                      },
+                    ),
                 ],
               ),
             ),
@@ -430,9 +426,6 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       if (mounted) showError(context, error);
     }
   }
-
-  String _roman(int position) =>
-      const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
 
   void _addAction(Skill skill, ActionGrade grade, TournamentTeam team) {
     final requiresPlayer =
@@ -1019,12 +1012,17 @@ class _HalfCourt extends StatelessWidget {
     required this.playerIdsByPosition,
     required this.selectedPlayerId,
     required this.onSelected,
+    this.positionKeyPrefix,
+    this.onPositionMenuRequested,
   });
 
   final TournamentTeam team;
   final List<String> playerIdsByPosition;
   final String? selectedPlayerId;
   final ValueChanged<String?> onSelected;
+  final String? positionKeyPrefix;
+  final void Function(int position, Offset globalPosition)?
+  onPositionMenuRequested;
 
   @override
   Widget build(BuildContext context) {
@@ -1092,15 +1090,29 @@ class _HalfCourt extends StatelessWidget {
     final playerId = playerIdsByPosition[position - 1];
     final player = team.players.firstWhere((item) => item.id == playerId);
     final selected = playerId == selectedPlayerId;
+    Offset? tapPosition;
     return Padding(
       padding: const EdgeInsets.all(5),
       child: Semantics(
         button: true,
         selected: selected,
         label:
-            'Position ${_roman(position)}, number ${player.number}, ${player.name}, ${player.position.name}',
+            'Position ${_romanPosition(position)}, number ${player.number}, ${player.name}, ${player.position.name}',
         child: InkWell(
-          onTap: () => onSelected(playerId),
+          key: positionKeyPrefix == null
+              ? null
+              : ValueKey('$positionKeyPrefix-$position'),
+          onTapDown: onPositionMenuRequested == null
+              ? null
+              : (details) => tapPosition = details.globalPosition,
+          onTap: () {
+            final menuRequested = onPositionMenuRequested;
+            if (menuRequested == null) {
+              onSelected(playerId);
+            } else {
+              menuRequested(position, tapPosition ?? Offset.zero);
+            }
+          },
           borderRadius: BorderRadius.circular(14),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
@@ -1137,7 +1149,7 @@ class _HalfCourt extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${player.position.name} • ${_roman(position)}',
+                  '${player.position.name} • ${_romanPosition(position)}',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontSize: 10,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1150,9 +1162,6 @@ class _HalfCourt extends StatelessWidget {
       ),
     );
   }
-
-  String _roman(int position) =>
-      const ['I', 'II', 'III', 'IV', 'V', 'VI'][position - 1];
 }
 
 class _Timeline extends StatelessWidget {
@@ -1260,6 +1269,82 @@ class _Timeline extends StatelessWidget {
         'Set ${timeout.setNumber} • ${timeout.homeScore}-${timeout.awayScore}',
       ),
     );
+  }
+}
+
+class _R5LineupEditor extends StatelessWidget {
+  const _R5LineupEditor({
+    required this.team,
+    required this.selectedPlayerIds,
+    required this.onPlayerSelected,
+  });
+
+  final TournamentTeam team;
+  final List<String> selectedPlayerIds;
+  final void Function(int position, String playerId) onPlayerSelected;
+
+  @override
+  Widget build(BuildContext context) => _HalfCourt(
+    team: team,
+    playerIdsByPosition: selectedPlayerIds,
+    selectedPlayerId: null,
+    positionKeyPrefix: 'lineup-position',
+    onSelected: (_) {},
+    onPositionMenuRequested: (position, anchor) {
+      _showPlayerDropdown(context, position, anchor);
+    },
+  );
+
+  Future<void> _showPlayerDropdown(
+    BuildContext context,
+    int position,
+    Offset anchor,
+  ) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final selectedPlayerId = await showMenu<String>(
+      context: context,
+      initialValue: selectedPlayerIds[position - 1],
+      position: RelativeRect.fromLTRB(
+        anchor.dx,
+        anchor.dy,
+        overlay.size.width - anchor.dx,
+        overlay.size.height - anchor.dy,
+      ),
+      items: [
+        for (final player in team.players)
+          PopupMenuItem<String>(
+            key: ValueKey('lineup-player-${player.id}'),
+            value: player.id,
+            child: SizedBox(
+              width: 230,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '#${player.number} ${player.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    '${player.position.name} • ${_assignmentLabel(player.id)}',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+    if (selectedPlayerId != null && context.mounted) {
+      onPlayerSelected(position - 1, selectedPlayerId);
+    }
+  }
+
+  String _assignmentLabel(String playerId) {
+    final position = selectedPlayerIds.indexOf(playerId);
+    return position < 0 ? 'Bench' : 'Position ${_romanPosition(position + 1)}';
   }
 }
 

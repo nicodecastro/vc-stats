@@ -142,6 +142,92 @@ void main() {
     expect(find.text('T-'), findsOneWidget);
   });
 
+  testWidgets('R-5 lineup opens a player dropdown from each court position', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 10, 2);
+    final initialOrder = homeTeam.players
+        .take(6)
+        .map((player) => player.id)
+        .toList();
+    final log = ScorerLog(
+      id: 'log',
+      gameId: 'game',
+      assignedTeamId: homeTeam.id,
+      deviceId: 'test-device',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+      lineups: [
+        LineupSnapshot(
+          teamId: homeTeam.id,
+          playerIds: initialOrder,
+          recordedAt: now,
+        ),
+      ],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.inProgress,
+      logs: [log],
+    );
+    final tournament = Tournament(
+      id: 'tournament',
+      name: 'League',
+      venue: 'Gym',
+      startsOn: now,
+      endsOn: now,
+      createdAt: now,
+      teams: [homeTeam, awayTeam],
+      games: [game],
+    );
+    final data = AppData(deviceId: 'test-device', tournaments: [tournament]);
+    final repository = MemoryAppRepository(data);
+    await tester.binding.setSurfaceSize(const Size(430, 1000));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(repository),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: const MaterialApp(
+          home: TrackerPage(tournamentId: 'tournament', gameId: 'game'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('R-5 lineup • Set 1'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Tap a player on the court'), findsOneWidget);
+    expect(find.byKey(const ValueKey('lineup-position-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('lineup-player-home-1')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('lineup-position-1')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('lineup-player-home-1')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('lineup-player-home-1')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Save lineup'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save lineup'));
+    await tester.pumpAndSettle();
+
+    final saved = await repository.load();
+    final savedLog = saved.tournaments.single.games.single.logs.single;
+    final savedOrder = savedLog.lineups.last.playerIds;
+    expect(savedOrder.take(2), [
+      homeTeam.players[1].id,
+      homeTeam.players[0].id,
+    ]);
+  });
+
   testWidgets('reports render the ordered player stats summary matrix', (
     tester,
   ) async {
