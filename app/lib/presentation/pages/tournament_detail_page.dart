@@ -158,7 +158,15 @@ class TournamentDetailPage extends ConsumerWidget {
                         trailing: Wrap(
                           spacing: 4,
                           children: [
-                            if (game.logs.length >= 2)
+                            if (game.status == GameStatus.finalized)
+                              IconButton(
+                                tooltip: 'Reconciliation summary',
+                                onPressed: () => context.push(
+                                  '/tournaments/$tournamentId/games/${game.id}/reconcile',
+                                ),
+                                icon: const Icon(Icons.fact_check_outlined),
+                              )
+                            else if (game.logs.length >= 2)
                               IconButton(
                                 tooltip: 'Reconcile',
                                 onPressed: () => context.push(

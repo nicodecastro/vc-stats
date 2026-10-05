@@ -68,7 +68,9 @@ class GamesPage extends ConsumerWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             FilledButton.tonal(
-                              onPressed: () => item.game.logs.length >= 2
+                              onPressed: () =>
+                                  item.game.status == GameStatus.finalized ||
+                                      item.game.logs.length >= 2
                                   ? context.push(
                                       '/tournaments/${item.tournament.id}/games/${item.game.id}/reconcile',
                                     )
@@ -76,7 +78,9 @@ class GamesPage extends ConsumerWidget {
                                       '/tournaments/${item.tournament.id}/games/${item.game.id}/track',
                                     ),
                               child: Text(
-                                item.game.logs.length >= 2
+                                item.game.status == GameStatus.finalized
+                                    ? 'Summary'
+                                    : item.game.logs.length >= 2
                                     ? 'Reconcile'
                                     : 'Track',
                               ),

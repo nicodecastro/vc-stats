@@ -6,6 +6,7 @@ import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
 import 'package:vc_sets/presentation/app.dart';
 import 'package:vc_sets/presentation/pages/games_page.dart';
+import 'package:vc_sets/presentation/pages/reconcile_page.dart';
 import 'package:vc_sets/presentation/pages/reports_page.dart';
 import 'package:vc_sets/presentation/pages/tournament_detail_page.dart';
 import 'package:vc_sets/presentation/pages/tracker_page.dart';
@@ -226,6 +227,234 @@ void main() {
       homeTeam.players[1].id,
       homeTeam.players[0].id,
     ]);
+  });
+
+  testWidgets('reconciliation decisions show each device full rally', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 10, 2);
+    final primary = ScorerLog(
+      id: 'primary',
+      gameId: 'game',
+      assignedTeamId: homeTeam.id,
+      deviceId: 'device-a',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: homeTeam.id,
+      rallies: [
+        Rally(
+          id: 'rally-a',
+          setNumber: 1,
+          sequence: 1,
+          winnerTeamId: homeTeam.id,
+          homeScore: 1,
+          awayScore: 0,
+          homeRotation: 1,
+          awayRotation: 1,
+          servingTeamId: homeTeam.id,
+          recordedAt: now,
+          actions: [
+            TeamAction(
+              id: 'serve-a',
+              teamId: homeTeam.id,
+              playerId: homeTeam.players.first.id,
+              skill: Skill.serve,
+              grade: ActionGrade.attempt,
+              recordedAt: now,
+            ),
+            TeamAction(
+              id: 'block-a',
+              teamId: homeTeam.id,
+              playerId: homeTeam.players[1].id,
+              skill: Skill.block,
+              grade: ActionGrade.success,
+              recordedAt: now,
+            ),
+          ],
+        ),
+      ],
+    );
+    final imported = ScorerLog(
+      id: 'imported',
+      gameId: 'game',
+      assignedTeamId: awayTeam.id,
+      deviceId: 'device-b',
+      createdAt: now,
+      updatedAt: now,
+      initialServingTeamId: awayTeam.id,
+      rallies: [
+        Rally(
+          id: 'rally-b',
+          setNumber: 1,
+          sequence: 1,
+          winnerTeamId: awayTeam.id,
+          homeScore: 0,
+          awayScore: 1,
+          homeRotation: 1,
+          awayRotation: 1,
+          servingTeamId: awayTeam.id,
+          recordedAt: now,
+          actions: [
+            TeamAction(
+              id: 'attack-b',
+              teamId: awayTeam.id,
+              playerId: awayTeam.players.first.id,
+              skill: Skill.attack,
+              grade: ActionGrade.error,
+              recordedAt: now,
+            ),
+          ],
+        ),
+      ],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.awaitingReconciliation,
+      logs: [primary, imported],
+    );
+    final tournament = Tournament(
+      id: 'tournament',
+      name: 'League',
+      venue: 'Gym',
+      startsOn: now,
+      endsOn: now,
+      createdAt: now,
+      teams: [homeTeam, awayTeam],
+      games: [game],
+    );
+    final data = AppData(deviceId: 'test-device', tournaments: [tournament]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(MemoryAppRepository(data)),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: const MaterialApp(
+          home: ReconcilePage(tournamentId: 'tournament', gameId: 'game'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1-0 • V1  B2+'), findsOneWidget);
+    expect(find.text('0-1 • A7-'), findsOneWidget);
+    expect(find.textContaining('winner '), findsNothing);
+  });
+
+  testWidgets('finalized games replace reconcile with an audit summary', (
+    tester,
+  ) async {
+    final now = DateTime.utc(2026, 10, 2, 12);
+    final primaryRally = Rally(
+      id: 'primary-rally',
+      setNumber: 1,
+      sequence: 1,
+      winnerTeamId: homeTeam.id,
+      homeScore: 1,
+      awayScore: 0,
+      homeRotation: 1,
+      awayRotation: 1,
+      servingTeamId: homeTeam.id,
+      recordedAt: now,
+    );
+    final importedRally = Rally(
+      id: 'imported-rally',
+      setNumber: 1,
+      sequence: 1,
+      winnerTeamId: awayTeam.id,
+      homeScore: 0,
+      awayScore: 1,
+      homeRotation: 1,
+      awayRotation: 1,
+      servingTeamId: awayTeam.id,
+      recordedAt: now,
+    );
+    final primary = testLog(rallies: [primaryRally]);
+    final imported = testLog(
+      id: 'log-b',
+      assignedTeamId: awayTeam.id,
+      deviceId: 'device-b',
+      rallies: [importedRally],
+    );
+    final official = testLog(
+      id: 'official',
+      assignedTeamId: 'official',
+      deviceId: 'device-a',
+      rallies: [importedRally],
+    );
+    final game = Game(
+      id: 'game',
+      tournamentId: 'tournament',
+      homeTeamId: homeTeam.id,
+      awayTeamId: awayTeam.id,
+      scheduledAt: now,
+      venue: 'Gym',
+      status: GameStatus.finalized,
+      logs: [primary, imported],
+      officialLog: official,
+      revisions: [
+        FinalizationRevision(
+          id: 'revision',
+          finalizedAt: now,
+          reason: 'Initial two-device reconciliation',
+          officialLog: official,
+        ),
+      ],
+    );
+    final tournament = testTournament(games: [game]);
+    final data = AppData(deviceId: 'device-a', tournaments: [tournament]);
+    final overrides = [
+      appRepositoryProvider.overrideWithValue(MemoryAppRepository(data)),
+      initialAppDataProvider.overrideWithValue(data),
+    ];
+    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides,
+        child: const MaterialApp(home: Scaffold(body: GamesPage())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Summary'), findsOneWidget);
+    expect(find.text('Reconcile'), findsNothing);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides,
+        child: const MaterialApp(
+          home: ReconcilePage(tournamentId: 'tournament', gameId: 'game'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Reconciliation summary'), findsOneWidget);
+    expect(find.text('HOM 0–1 AWY'), findsOneWidget);
+    expect(find.text('Official: Device B'), findsOneWidget);
+    expect(find.text('Device A: 1-0 • No actions recorded'), findsOneWidget);
+    expect(find.text('Device B: 0-1 • No actions recorded'), findsOneWidget);
+    expect(find.text('Finalize official match'), findsNothing);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides,
+        child: MaterialApp(
+          home: Scaffold(
+            body: TournamentDetailPage(tournamentId: tournament.id),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip('Reconciliation summary'), findsOneWidget);
+    expect(find.byTooltip('Reconcile'), findsNothing);
   });
 
   testWidgets('reports render the ordered player stats summary matrix', (
