@@ -115,7 +115,9 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 900;
+            final splitLayout = constraints.maxWidth >= 760;
+            final compact = splitLayout && constraints.maxWidth < 1200;
+            final denseDesktopSkills = splitLayout && !compact;
             final scorePanel = _ScorePanel(
               home: home,
               away: away,
@@ -158,6 +160,8 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
                       courtPlayerIds.length != 6
                   ? null
                   : _recordLiberoSwap,
+              compact: compact,
+              denseSkillButtons: denseDesktopSkills,
             );
             final timeline = _Timeline(
               log: log,
@@ -165,13 +169,14 @@ class _TrackerPageState extends ConsumerState<TrackerPage> {
               away: away,
               trackedTeam: assigned,
             );
-            if (wide) {
+            if (splitLayout) {
               return Row(
                 children: [
                   Expanded(
                     flex: 5,
                     child: ListView(
-                      padding: const EdgeInsets.all(18),
+                      key: const ValueKey('tracker-entry-scroll'),
+                      padding: EdgeInsets.all(compact ? 10 : 18),
                       children: [entryPanel],
                     ),
                   ),
@@ -773,6 +778,8 @@ class _EntryPanel extends StatelessWidget {
     required this.onSubstitution,
     required this.onTimeout,
     required this.onLiberoSwap,
+    required this.compact,
+    required this.denseSkillButtons,
   });
   final TournamentTeam team;
   final int setNumber;
@@ -793,142 +800,193 @@ class _EntryPanel extends StatelessWidget {
   final VoidCallback? onSubstitution;
   final VoidCallback? onTimeout;
   final VoidCallback? onLiberoSwap;
+  final bool compact;
+  final bool denseSkillButtons;
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Player actions',
-                style: Theme.of(context).textTheme.titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              IconButton(
-                onPressed: onUndo,
-                tooltip: 'Undo last rally',
-                icon: const Icon(Icons.undo),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _HalfCourt(
-            team: team,
-            playerIdsByPosition: courtPlayerIds,
-            selectedPlayerId: selectedPlayerId,
-            onSelected: onPlayerChanged,
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              OutlinedButton.icon(
-                onPressed: onEditLineup,
-                icon: const Icon(Icons.format_list_numbered),
-                label: Text('R-5 lineup • Set $setNumber'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onSubstitution,
-                icon: const Icon(Icons.swap_horiz),
-                label: Text('Substitution ($substitutionsUsed)'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onTimeout,
-                icon: const Icon(Icons.timer_outlined),
-                label: Text('Timeout ($timeoutsUsed/2)'),
-              ),
-              Chip(label: Text('Rotation $rotation')),
-              SizedBox(
-                width: 170,
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('libero-$selectedLiberoId'),
-                  initialValue: selectedLiberoId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Libero',
-                    isDense: true,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                  ),
-                  hint: const Text('No libero'),
-                  items: liberos
-                      .map(
-                        (player) => DropdownMenuItem(
-                          value: player.id,
-                          child: Text(
-                            '#${player.number} ${player.name}',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: liberos.isEmpty ? null : onLiberoChanged,
+  Widget build(BuildContext context) {
+    final outlinedStyle = compact
+        ? OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            visualDensity: VisualDensity.compact,
+          )
+        : null;
+    final tonalStyle = compact
+        ? FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            visualDensity: VisualDensity.compact,
+          )
+        : null;
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 10 : 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Player actions',
+                  style: Theme.of(context).textTheme.titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold),
                 ),
-              ),
-              FilledButton.tonalIcon(
-                onPressed: onLiberoSwap,
-                icon: const Icon(Icons.sync_alt),
-                label: const Text('Quick swap'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            selectedPlayerId == null
-                ? 'Select an on-court player'
-                : 'Selected: ${_playerLabel(team, selectedPlayerId!)}',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          _SkillActionGrid(
-            enabled: selectedPlayerId != null,
-            onAdd: (skill, grade) => onAdd(skill, grade, team),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilledButton.tonalIcon(
-                onPressed: () =>
-                    onAdd(Skill.opponentError, ActionGrade.success, team),
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('OPP ERR  •  OP+'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () =>
-                    onAdd(Skill.teamFault, ActionGrade.error, team),
-                icon: const Icon(Icons.remove_circle_outline),
-                label: const Text('TEAM FAULT  •  T-'),
-              ),
-            ],
-          ),
-          if (pending.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Text('This rally', style: Theme.of(context).textTheme.titleSmall),
-            Wrap(
-              spacing: 6,
-              children: pending
-                  .map(
-                    (action) => InputChip(
-                      label: Text(action.notation(team)),
-                      onDeleted: () => onRemove(action),
-                    ),
-                  )
-                  .toList(),
+                const Spacer(),
+                IconButton(
+                  onPressed: onUndo,
+                  tooltip: 'Undo last rally',
+                  icon: const Icon(Icons.undo),
+                ),
+              ],
             ),
+            SizedBox(height: compact ? 4 : 10),
+            _HalfCourt(
+              team: team,
+              playerIdsByPosition: courtPlayerIds,
+              selectedPlayerId: selectedPlayerId,
+              onSelected: onPlayerChanged,
+              compact: compact,
+            ),
+            SizedBox(height: compact ? 6 : 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: onEditLineup,
+                  style: outlinedStyle,
+                  icon: Icon(
+                    Icons.format_list_numbered,
+                    size: compact ? 17 : 24,
+                  ),
+                  label: Text(
+                    compact
+                        ? 'R-5 • Set $setNumber'
+                        : 'R-5 lineup • Set $setNumber',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onSubstitution,
+                  style: outlinedStyle,
+                  icon: Icon(Icons.swap_horiz, size: compact ? 17 : 24),
+                  label: Text(
+                    compact
+                        ? 'Sub ($substitutionsUsed)'
+                        : 'Substitution ($substitutionsUsed)',
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: onTimeout,
+                  style: outlinedStyle,
+                  icon: Icon(Icons.timer_outlined, size: compact ? 17 : 24),
+                  label: Text('Timeout ($timeoutsUsed/2)'),
+                ),
+                Chip(
+                  visualDensity: compact ? VisualDensity.compact : null,
+                  label: Text('Rotation $rotation'),
+                ),
+                SizedBox(
+                  width: compact ? 140 : 170,
+                  child: DropdownButtonFormField<String>(
+                    key: ValueKey('libero-$selectedLiberoId'),
+                    initialValue: selectedLiberoId,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      labelText: 'Libero',
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: compact ? 8 : 12,
+                        vertical: compact ? 6 : 10,
+                      ),
+                    ),
+                    hint: const Text('No libero'),
+                    items: liberos
+                        .map(
+                          (player) => DropdownMenuItem(
+                            value: player.id,
+                            child: Text(
+                              '#${player.number} ${player.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: liberos.isEmpty ? null : onLiberoChanged,
+                  ),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: onLiberoSwap,
+                  style: tonalStyle,
+                  icon: Icon(Icons.sync_alt, size: compact ? 17 : 24),
+                  label: const Text('Quick swap'),
+                ),
+              ],
+            ),
+            SizedBox(height: compact ? 6 : 14),
+            Text(
+              selectedPlayerId == null
+                  ? 'Select an on-court player'
+                  : 'Selected: ${_playerLabel(team, selectedPlayerId!)}',
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            SizedBox(height: compact ? 3 : 8),
+            _SkillActionGrid(
+              enabled: selectedPlayerId != null,
+              onAdd: (skill, grade) => onAdd(skill, grade, team),
+              compact: compact,
+              denseDesktop: denseSkillButtons,
+            ),
+            SizedBox(height: compact ? 4 : 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.tonalIcon(
+                  onPressed: () =>
+                      onAdd(Skill.opponentError, ActionGrade.success, team),
+                  style: tonalStyle,
+                  icon: Icon(Icons.add_circle_outline, size: compact ? 17 : 24),
+                  label: const Text('OPP ERR  •  OP+'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () =>
+                      onAdd(Skill.teamFault, ActionGrade.error, team),
+                  style: outlinedStyle,
+                  icon: Icon(
+                    Icons.remove_circle_outline,
+                    size: compact ? 17 : 24,
+                  ),
+                  label: const Text('TEAM FAULT  •  T-'),
+                ),
+              ],
+            ),
+            if (pending.isNotEmpty) ...[
+              SizedBox(height: compact ? 4 : 14),
+              Text(
+                'This rally',
+                style: compact
+                    ? Theme.of(context).textTheme.labelLarge
+                    : Theme.of(context).textTheme.titleSmall,
+              ),
+              Wrap(
+                spacing: 6,
+                children: pending
+                    .map(
+                      (action) => InputChip(
+                        visualDensity: compact ? VisualDensity.compact : null,
+                        materialTapTargetSize: compact
+                            ? MaterialTapTargetSize.shrinkWrap
+                            : null,
+                        label: Text(action.notation(team)),
+                        onDeleted: () => onRemove(action),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   String _playerLabel(TournamentTeam team, String playerId) {
     final player = team.players
@@ -941,10 +999,17 @@ class _EntryPanel extends StatelessWidget {
 }
 
 class _SkillActionGrid extends StatelessWidget {
-  const _SkillActionGrid({required this.enabled, required this.onAdd});
+  const _SkillActionGrid({
+    required this.enabled,
+    required this.onAdd,
+    required this.compact,
+    required this.denseDesktop,
+  });
 
   final bool enabled;
   final void Function(Skill skill, ActionGrade grade) onAdd;
+  final bool compact;
+  final bool denseDesktop;
 
   static const skills = [
     (label: 'SERVICE', code: 'V', skill: Skill.serve),
@@ -956,54 +1021,76 @@ class _SkillActionGrid extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      for (final item in skills)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 7),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 112,
-                child: Text(
-                  '${item.label} (${item.code})',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: enabled
-                      ? () => onAdd(item.skill, ActionGrade.attempt)
-                      : null,
-                  child: const Text('ATT'),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: FilledButton.tonal(
-                  onPressed: enabled
-                      ? () => onAdd(item.skill, ActionGrade.success)
-                      : null,
-                  child: const Text('EXC'),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: OutlinedButton(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.error,
+  Widget build(BuildContext context) {
+    final dense = compact || denseDesktop;
+    final outlinedStyle = OutlinedButton.styleFrom(
+      minimumSize: Size(0, dense ? 34 : 48),
+      padding: EdgeInsets.symmetric(horizontal: dense ? 4 : 12),
+      visualDensity: dense ? VisualDensity.compact : null,
+      tapTargetSize: denseDesktop ? MaterialTapTargetSize.shrinkWrap : null,
+    );
+    final successStyle = FilledButton.styleFrom(
+      minimumSize: Size(0, dense ? 34 : 48),
+      padding: EdgeInsets.symmetric(horizontal: dense ? 4 : 12),
+      visualDensity: dense ? VisualDensity.compact : null,
+      tapTargetSize: denseDesktop ? MaterialTapTargetSize.shrinkWrap : null,
+    );
+    return Column(
+      children: [
+        for (final item in skills)
+          Padding(
+            padding: EdgeInsets.only(bottom: compact ? 3 : 7),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: compact ? 82 : 112,
+                  child: Text(
+                    '${item.label} (${item.code})',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: compact ? 11 : null,
+                    ),
                   ),
-                  onPressed: enabled
-                      ? () => onAdd(item.skill, ActionGrade.error)
-                      : null,
-                  child: const Text('ERR'),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: OutlinedButton(
+                    style: outlinedStyle,
+                    onPressed: enabled
+                        ? () => onAdd(item.skill, ActionGrade.attempt)
+                        : null,
+                    child: const Text('ATT'),
+                  ),
+                ),
+                SizedBox(width: compact ? 3 : 6),
+                Expanded(
+                  child: FilledButton.tonal(
+                    style: successStyle,
+                    onPressed: enabled
+                        ? () => onAdd(item.skill, ActionGrade.success)
+                        : null,
+                    child: const Text('EXC'),
+                  ),
+                ),
+                SizedBox(width: compact ? 3 : 6),
+                Expanded(
+                  child: OutlinedButton(
+                    style: outlinedStyle.copyWith(
+                      foregroundColor: WidgetStatePropertyAll(
+                        Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    onPressed: enabled
+                        ? () => onAdd(item.skill, ActionGrade.error)
+                        : null,
+                    child: const Text('ERR'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 class _HalfCourt extends StatelessWidget {
@@ -1014,6 +1101,7 @@ class _HalfCourt extends StatelessWidget {
     required this.onSelected,
     this.positionKeyPrefix,
     this.onPositionMenuRequested,
+    this.compact = false,
   });
 
   final TournamentTeam team;
@@ -1023,12 +1111,13 @@ class _HalfCourt extends StatelessWidget {
   final String? positionKeyPrefix;
   final void Function(int position, Offset globalPosition)?
   onPositionMenuRequested;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     if (playerIdsByPosition.length != 6) {
       return Container(
-        constraints: const BoxConstraints(minHeight: 180),
+        constraints: BoxConstraints(minHeight: compact ? 130 : 180),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
@@ -1055,7 +1144,7 @@ class _HalfCourt extends StatelessWidget {
       child: Column(
         children: [
           Container(
-            height: 8,
+            height: compact ? 5 : 8,
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primary,
               borderRadius: const BorderRadius.vertical(
@@ -1064,16 +1153,16 @@ class _HalfCourt extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+            padding: EdgeInsets.fromLTRB(8, compact ? 2 : 6, 8, 2),
             child: Text(
               'NET • FRONT ROW',
               style: Theme.of(context).textTheme.labelSmall,
             ),
           ),
           _courtRow(context, const [4, 3, 2]),
-          const Divider(height: 10, indent: 8, endIndent: 8),
+          Divider(height: compact ? 5 : 10, indent: 8, endIndent: 8),
           _courtRow(context, const [5, 6, 1]),
-          const SizedBox(height: 8),
+          SizedBox(height: compact ? 3 : 8),
         ],
       ),
     );
@@ -1092,7 +1181,7 @@ class _HalfCourt extends StatelessWidget {
     final selected = playerId == selectedPlayerId;
     Offset? tapPosition;
     return Padding(
-      padding: const EdgeInsets.all(5),
+      padding: EdgeInsets.all(compact ? 3 : 5),
       child: Semantics(
         button: true,
         selected: selected,
@@ -1116,7 +1205,7 @@ class _HalfCourt extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
-            constraints: const BoxConstraints(minHeight: 74),
+            constraints: BoxConstraints(minHeight: compact ? 52 : 74),
             decoration: BoxDecoration(
               color: selected
                   ? Theme.of(context).colorScheme.primaryContainer
@@ -1134,8 +1223,11 @@ class _HalfCourt extends StatelessWidget {
               children: [
                 Text(
                   '#${player.number}',
-                  style: Theme.of(context).textTheme.titleLarge
-                      ?.copyWith(fontWeight: FontWeight.w900),
+                  style:
+                      (compact
+                              ? Theme.of(context).textTheme.titleMedium
+                              : Theme.of(context).textTheme.titleLarge)
+                          ?.copyWith(fontWeight: FontWeight.w900),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -1144,14 +1236,16 @@ class _HalfCourt extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.labelMedium
-                        ?.copyWith(fontSize: 11, fontWeight: FontWeight.w600),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontSize: compact ? 10 : 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 Text(
                   '${player.position.name} • ${_romanPosition(position)}',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    fontSize: 10,
+                    fontSize: compact ? 9 : 10,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),

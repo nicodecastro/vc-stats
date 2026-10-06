@@ -115,8 +115,15 @@ void main() {
     final scoreboard = tester.getTopLeft(find.text('SET 1'));
     final timeline = tester.getTopLeft(find.text('Event timeline'));
     final playerActions = tester.getTopLeft(find.text('Player actions'));
+    final desktopAttButton = find
+        .ancestor(
+          of: find.text('ATT').first,
+          matching: find.byType(OutlinedButton),
+        )
+        .first;
     expect(scoreboard.dy, lessThan(timeline.dy));
     expect(playerActions.dy, lessThan(160));
+    expect(tester.getSize(desktopAttButton).height, lessThanOrEqualTo(34));
 
     await tester.tap(find.text('ATT').first);
     await tester.pump();
@@ -141,6 +148,27 @@ void main() {
     expect(find.text('V1+'), findsNWidgets(2));
     expect(find.text('OP+'), findsOneWidget);
     expect(find.text('T-'), findsOneWidget);
+
+    for (final size in [const Size(810, 1080), const Size(1080, 810)]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpAndSettle();
+      final entryScroll = find.byKey(const ValueKey('tracker-entry-scroll'));
+      expect(entryScroll, findsOneWidget);
+      final scrollable = tester.state<ScrollableState>(
+        find
+            .descendant(of: entryScroll, matching: find.byType(Scrollable))
+            .first,
+      );
+      expect(
+        scrollable.position.maxScrollExtent,
+        0,
+        reason:
+            'Player actions and a populated rally should fit without scrolling at $size.',
+      );
+      expect(find.text('Event timeline'), findsOneWidget);
+      expect(find.text('TEAM FAULT  •  T-'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('R-5 lineup opens a player dropdown from each court position', (
