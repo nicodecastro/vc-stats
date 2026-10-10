@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../application/providers.dart';
@@ -1360,7 +1361,7 @@ class _Timeline extends StatelessWidget {
       leading: const CircleAvatar(child: Icon(Icons.timer_outlined, size: 18)),
       title: Text('${trackedTeam.shortCode} timeout'),
       subtitle: Text(
-        'Set ${timeout.setNumber} • ${timeout.homeScore}-${timeout.awayScore}',
+        'Set ${timeout.setNumber} • ${timeout.homeScore}-${timeout.awayScore} • ${DateFormat.jm().format(timeout.recordedAt.toLocal())}',
       ),
     );
   }

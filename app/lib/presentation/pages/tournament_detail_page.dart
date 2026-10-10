@@ -1081,9 +1081,7 @@ class TournamentDetailPage extends ConsumerWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Scheduled date'),
-                  subtitle: Text(
-                    DateFormat.yMMMd().add_jm().format(scheduledAt),
-                  ),
+                  subtitle: Text(DateFormat.yMMMd().format(scheduledAt)),
                   trailing: const Icon(Icons.calendar_month),
                   onTap: () async {
                     final date = await showDatePicker(
@@ -1100,6 +1098,29 @@ class TournamentDetailPage extends ConsumerWidget {
                           date.day,
                           scheduledAt.hour,
                           scheduledAt.minute,
+                        ),
+                      );
+                    }
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Scheduled time'),
+                  subtitle: Text(DateFormat.jm().format(scheduledAt)),
+                  trailing: const Icon(Icons.schedule),
+                  onTap: () async {
+                    final time = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.fromDateTime(scheduledAt),
+                    );
+                    if (time != null) {
+                      setState(
+                        () => scheduledAt = DateTime(
+                          scheduledAt.year,
+                          scheduledAt.month,
+                          scheduledAt.day,
+                          time.hour,
+                          time.minute,
                         ),
                       );
                     }

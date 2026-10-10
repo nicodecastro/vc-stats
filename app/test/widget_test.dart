@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:vc_sets/application/providers.dart';
 import 'package:vc_sets/data/repository.dart';
 import 'package:vc_sets/domain/models.dart';
@@ -48,6 +49,16 @@ void main() {
       createdAt: now,
       updatedAt: now,
       initialServingTeamId: homeTeam.id,
+      timeouts: [
+        TeamTimeout(
+          id: 'timeout',
+          teamId: homeTeam.id,
+          setNumber: 1,
+          homeScore: 0,
+          awayScore: 0,
+          recordedAt: DateTime(2026, 10, 2, 14, 37),
+        ),
+      ],
       lineups: [
         LineupSnapshot(
           teamId: homeTeam.id,
@@ -98,7 +109,7 @@ void main() {
     expect(find.text('NET • FRONT ROW'), findsOneWidget);
     expect(find.text('R-5 lineup • Set 1'), findsOneWidget);
     expect(find.text('Substitution (0)'), findsOneWidget);
-    expect(find.text('Timeout (0/2)'), findsOneWidget);
+    expect(find.text('Timeout (1/2)'), findsOneWidget);
     expect(find.text('Libero'), findsOneWidget);
     expect(find.text('Quick swap'), findsOneWidget);
     expect(find.text('#1'), findsWidgets);
@@ -115,6 +126,12 @@ void main() {
     final scoreboard = tester.getTopLeft(find.text('SET 1'));
     final timeline = tester.getTopLeft(find.text('Event timeline'));
     final playerActions = tester.getTopLeft(find.text('Player actions'));
+    expect(
+      find.text(
+        'Set 1 • 0-0 • ${DateFormat.jm().format(DateTime(2026, 10, 2, 14, 37))}',
+      ),
+      findsOneWidget,
+    );
     final desktopAttButton = find
         .ancestor(
           of: find.text('ATT').first,
@@ -540,6 +557,43 @@ void main() {
 
     expect(find.text('Export scorer log'), findsOneWidget);
     expect(find.text('Delete game'), findsOneWidget);
+  });
+
+  testWidgets('new game dialog opens a scheduled time picker', (tester) async {
+    final tournament = testTournament();
+    final data = AppData(deviceId: 'test-device', tournaments: [tournament]);
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appRepositoryProvider.overrideWithValue(MemoryAppRepository(data)),
+          initialAppDataProvider.overrideWithValue(data),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: TournamentDetailPage(tournamentId: tournament.id),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add game').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Scheduled date'), findsOneWidget);
+    expect(find.text('Scheduled time'), findsOneWidget);
+    expect(
+      find.text(
+        DateFormat.jm().format(
+          tournament.startsOn.add(const Duration(hours: 9)),
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Scheduled time'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TimePickerDialog), findsOneWidget);
   });
 
   testWidgets('tournament deletion requires destructive confirmation', (
